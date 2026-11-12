@@ -1,0 +1,2154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#8f0f17">
+<title>Aplicación 3D y AR</title>
+<!-- Importante: este mapa de importaciones debe ir antes de cualquier modulepreload y del script principal -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap" rel="stylesheet"></noscript>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/environments/RoomEnvironment.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/DRACOLoader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/KTX2Loader.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/meshopt_decoder.module.js">
+<script>
+// Los 3 modelos de la portada empiezan a bajar YA, mientras se descarga la librería 3D (si cambias sus nombres, cámbialos también en MODELOS)
+window.__pre = {};
+['portada/Mural_3D_Componentes_electronicos_decimo.glb', 'portada/Insignia_Exclamacion_sin_base.glb', 'botones/Boton_3D_EMPEZAR_sin_base.glb'].forEach(function (u) {
+  window.__pre[u] = fetch(u).then(function (r) { if (!r.ok) throw new Error(u); return r.arrayBuffer(); });
+  window.__pre[u].catch(function () {});
+});
+</script>
+<style>
+  :root {
+    --fondo-1: #e0262b; --fondo-2: #8f0f17; --fondo-3: #4a060b;
+    --trazo: #ff9a9a; --texto: #e9f3f1; --texto-suave: #ffd0d0;
+    --oro: #fac31a; --oro-texto: #1a1403;
+    --vidrio: rgba(52, 6, 10, 0.58); --borde: rgba(233, 243, 241, 0.28);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    font-family: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--texto);
+    background: radial-gradient(120% 90% at 50% 35%, var(--fondo-1) 0%, var(--fondo-2) 55%, var(--fondo-3) 100%);
+    -webkit-tap-highlight-color: transparent;
+  }
+  [hidden] { display: none !important; }
+
+  /* Fondo animado (solo en el visor 3D; en AR se ve la cámara) */
+  #fondo { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  #fondo::before {
+    content: ""; position: absolute; inset: -200px; opacity: 0.16;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200' fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M0 40h50l20 20h40'/%3E%3Ccircle cx='116' cy='60' r='4.5'/%3E%3Cpath d='M200 40h-14'/%3E%3Cpath d='M0 120h14'/%3E%3Cpath d='M200 120h-44l-24 24v56'/%3E%3Ccircle cx='132' cy='148' r='4.5'/%3E%3Cpath d='M132 0v26l14 14h40'/%3E%3Cpath d='M14 120h40l16 16'/%3E%3Ccircle cx='76' cy='142' r='4.5'/%3E%3Crect x='40' y='160' width='26' height='14' rx='2'/%3E%3Cpath d='M40 167h-12M66 167h12'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+    animation: deriva 70s linear infinite; will-change: transform;
+  }
+  #fondo::after {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(55% 40% at 50% 42%, color-mix(in srgb, var(--trazo) 28%, transparent) 0%, transparent 70%),
+      radial-gradient(90% 60% at 50% 110%, rgba(0, 0, 0, 0.45) 0%, transparent 70%);
+  }
+  @keyframes deriva { from { transform: translate(0, 0); } to { transform: translate(200px, 200px); } }
+  @media (prefers-reduced-motion: reduce) { #fondo::before, #fondo::after { animation: none; } }
+  body[data-modo="ar"] #fondo { display: none; }
+
+  /* Capas */
+  #cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; z-index: 0; }
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; }
+  #ui {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+  #gestos { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
+
+  #cabecera { position: absolute; top: 18px; left: 20px; right: 150px; pointer-events: none; }
+  #cabecera p { margin: 0; max-width: 30ch; font-size: 0.9rem; line-height: 1.45; color: var(--texto-suave); }
+
+  .boton {
+    pointer-events: auto; font: inherit; font-weight: 700; cursor: pointer; border-radius: 999px;
+    padding: 14px 26px; font-size: 1rem; border: 1px solid transparent; touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  .boton:focus-visible { outline: 3px solid var(--texto); outline-offset: 3px; }
+  .boton:disabled { opacity: 0.5; cursor: progress; }
+  .principal { background: var(--oro); color: var(--oro-texto); padding: 16px 34px; font-size: 1.05rem; }
+  .secundario {
+    background: rgba(52, 6, 10, 0.85); color: var(--texto); border-color: var(--borde);
+    padding: 11px 20px; font-size: 0.9rem;
+  }
+  #restablecer, #salir { position: absolute; top: 18px; right: 20px; }
+  #acciones {
+    position: absolute; left: 0; right: 0; bottom: 26px; display: flex; flex-direction: column;
+    align-items: center; gap: 12px; pointer-events: none;
+  }
+  #aviso {
+    position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%);
+    max-width: min(88vw, 34ch); padding: 12px 18px; border-radius: 14px;
+    background: rgba(52, 6, 10, 0.88); border: 1px solid var(--borde);
+    font-size: 0.92rem; line-height: 1.4; text-align: center; pointer-events: none;
+  }
+  #aviso.error { border-color: var(--oro); }
+
+  /* Qué se muestra en cada modo */
+  body[data-modo="visor"] .solo-ar { display: none; }
+  body[data-modo="ar"] .solo-visor { display: none; }
+  body[data-modo="ar"] #cam { display: block; }
+  body[data-modo="ar"] { background: transparent; }
+  body[data-modo="ar"] #cabecera p { color: var(--texto); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); }
+
+  /* Pantalla de inicio */
+  #inicioAR {
+    position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 18px; text-align: center;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 28px calc(24px + env(safe-area-inset-bottom, 0px));
+    background: radial-gradient(120% 90% at 50% 35%, rgba(224, 38, 43, 0.96) 0%, rgba(143, 15, 23, 0.97) 55%, rgba(74, 6, 11, 0.98) 100%);
+  }
+  #inicioAR h2 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; max-width: 18ch; }
+  #inicioAR p { margin: 0; max-width: 30ch; font-size: 1rem; line-height: 1.45; color: var(--texto-suave); }
+  #inicioAR .principal { padding: 20px 40px; font-size: 1.2rem; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); }
+  #inicioMsg { min-height: 3em; max-width: 32ch; font-size: 0.92rem; line-height: 1.4; }
+  #inicioMsg.error { color: var(--oro); }
+  #inicioAR .enlace {
+    cursor: pointer; background: none; border: none; color: var(--texto-suave); text-decoration: underline;
+    font-size: 0.9rem; padding: 8px 14px;
+  }
+</style>
+</head>
+<body data-modo="visor">
+
+<div id="fondo" aria-hidden="true"></div>
+<video id="cam" playsinline muted autoplay></video>
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <div id="gestos"></div>
+  <div id="cabecera">
+    <p id="ayudaVisor" class="solo-visor">Arrastra para girar y pellizca para acercar o alejar.</p>
+    <p id="ayudaAR" class="solo-ar">Arrástrala para girarla y pellizca para cambiar su tamaño.</p>
+  </div>
+  <button id="restablecer" class="boton secundario solo-visor" type="button">Restablecer</button>
+  <button id="salir" class="boton secundario solo-ar" type="button">Salir de AR</button>
+  <div id="aviso" role="status" aria-live="polite" hidden></div>
+  <div id="acciones">
+    <button id="btnAR" class="boton principal solo-visor" type="button" disabled>AR con cámara</button>
+  </div>
+</div>
+
+<div id="inicioAR">
+  <h2>Aplicación en 3D y AR</h2>
+  <p>Toca el botón, apunta la cámara y mira la escena flotando frente a ti.</p>
+  <button id="inicioBtn" class="boton principal" type="button" disabled>Cargando modelos…</button>
+  <div id="inicioMsg" role="status"></div>
+  <button id="inicio3D" class="boton enlace" type="button">Verlo en 3D, sin cámara</button>
+</div>
+
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+// ===================== AJUSTES =====================
+// Ojo con las mayúsculas y los nombres exactos de los archivos (en GitHub importan).
+const MODELOS = {
+  mural:         'portada/Mural_3D_Componentes_electronicos_decimo.glb',
+  insignia:      'portada/Insignia_Exclamacion_sin_base.glb',
+  empezar:       'botones/Boton_3D_EMPEZAR_sin_base.glb',
+  btnVideo:      'botones/Boton_3D_VIDEO_sin_base.glb',
+  btnContenido:  'botones/Boton_3D_CONTENIDO_sin_base.glb',
+  btnPortada:    'botones/Boton_3D_PORTADA_sin_base.glb',
+  btnRegresar:   'botones/Boton_3D_REGRESAR_sin_base.glb',
+  btnAvanzar:    'botones/Boton_3D_AVANZAR_sin_base.glb',
+  btnFinalizar:  'botones/Boton_3D_FINALIZAR_sin_base.glb',
+  trofeo:        'prueba/Trofeo_Electronica.glb'
+};
+
+// Componentes de la escena Contenido (el 1.º va en el centro y los demás lo rodean en círculo, en este orden). nombre = lo que se lee en la tarjeta | zoom = tamaño relativo
+// titulo / pregunta / que / funciones = el texto del panel de información (vista grande)
+// inclinar = cuánto se echa hacia ti (radianes):
+// las placas (Arduino, protoboard) vienen acostadas, por eso van muy inclinadas para que se vea su cara al girar.
+const COMPONENTES = [
+  { clave: 'arduino', nombre: 'Arduino UNO', archivo: 'componentes/arduino_uno.glb', inclinar: 1.1, zoom: 1.1,
+    titulo: 'Arduino UNO', pregunta: '¿Qué es?',
+    que: 'Es una placa electrónica programable que permite controlar diferentes componentes y dispositivos electrónicos mediante instrucciones escritas en un programa.',
+    funciones: ['Ejecutar las instrucciones del programa.', 'Recibir información de sensores.', 'Controlar dispositivos conectados, como LED y servomotores.'] },
+  { clave: 'jumper', nombre: 'Jumpers', archivo: 'componentes/jumper.glb', inclinar: 0.25, zoom: 1,
+    titulo: 'Cables jumper', pregunta: '¿Qué son?',
+    que: 'Son cables utilizados para establecer conexiones eléctricas entre diferentes componentes de un circuito.',
+    funciones: ['Conectar el Arduino con la protoboard.', 'Unir sensores y otros componentes.', 'Transportar señales y alimentación eléctrica.'] },
+  { clave: 'led', nombre: 'LED', archivo: 'componentes/led.glb', inclinar: 0.2, zoom: 0.85,
+    titulo: 'LED', pregunta: '¿Qué es?',
+    que: 'Es un componente electrónico que emite luz cuando circula corriente eléctrica a través de él en el sentido adecuado.',
+    funciones: ['Producir señales luminosas.', 'Indicar si un circuito está funcionando.', 'Representar estados o alertas en proyectos electrónicos.'] },
+  { clave: 'protoboard', nombre: 'Protoboard', archivo: 'componentes/Protoboard_830.glb', inclinar: 1.1, zoom: 1.1,
+    titulo: 'Protoboard', pregunta: '¿Qué es?',
+    que: 'Es una placa utilizada para realizar conexiones entre componentes electrónicos sin necesidad de soldarlos.',
+    funciones: ['Facilitar la conexión de componentes.', 'Permitir construir y probar circuitos.', 'Modificar las conexiones de manera sencilla.'] },
+  { clave: 'resistencia', nombre: 'Resistencia', archivo: 'componentes/resistencia.glb', inclinar: 0.35, zoom: 1.15,
+    titulo: 'Resistencia', pregunta: '¿Qué es?',
+    que: 'Es un componente electrónico pasivo que limita el paso de la corriente eléctrica dentro de un circuito.',
+    funciones: ['Limitar la corriente eléctrica.', 'Ayudar a proteger otros componentes.', 'Regular las condiciones eléctricas de un circuito.'] },
+  { clave: 'sensor', nombre: 'Sensor', archivo: 'componentes/sensor.glb', inclinar: 0.3, zoom: 1.1,
+    titulo: 'Sensor ultrasónico HC-SR04', pregunta: '¿Qué es?',
+    que: 'Es un sensor electrónico que utiliza ondas ultrasónicas para detectar objetos y calcular la distancia a la que se encuentran.',
+    funciones: ['Detectar objetos cercanos.', 'Medir distancias.', 'Enviar información al Arduino para realizar determinadas acciones.'] },
+  { clave: 'servo', nombre: 'Servo', archivo: 'componentes/servo.glb', inclinar: 0.3, zoom: 1.1,
+    titulo: 'Servomotor SG90', pregunta: '¿Qué es?',
+    que: 'Es un motor que permite controlar la posición angular de su eje mediante señales de control.',
+    funciones: ['Producir movimientos controlados.', 'Ubicar su eje en una posición determinada.', 'Realizar movimientos en proyectos de robótica.'] }
+];
+for (const c of COMPONENTES) MODELOS['comp_' + c.clave] = c.archivo;
+
+// ===================== PRUEBA DE CONOCIMIENTO =====================
+// q = pregunta | o = las 4 opciones | c = número de la correcta (0 = A, 1 = B, 2 = C, 3 = D)
+// ok / mal = retroalimentación si acierta / si falla | comp = componente 3D que aparece al responder (clave de COMPONENTES)
+const PREGUNTAS = [
+  { q: '¿Qué es el Arduino UNO?',
+    o: ['Un dispositivo para almacenar energía eléctrica.', 'Una placa electrónica programable que permite controlar componentes.', 'Un componente que emite luz.', 'Un cable para conectar circuitos.'], c: 1, comp: 'arduino',
+    ok: '¡Excelente! El Arduino UNO es una placa electrónica programable que procesa instrucciones y permite controlar diferentes componentes electrónicos.',
+    mal: '¡Inténtalo nuevamente! Recuerda que el Arduino UNO es el elemento que ejecuta las instrucciones del programa y controla los dispositivos conectados.' },
+  { q: '¿Cuál es la función principal de la protoboard?',
+    o: ['Permitir realizar conexiones electrónicas sin soldar.', 'Medir la distancia entre objetos.', 'Controlar el movimiento de un motor.', 'Almacenar información.'], c: 0, comp: 'protoboard',
+    ok: '¡Muy bien! La protoboard permite conectar componentes electrónicos sin necesidad de soldarlos, facilitando la construcción y prueba de circuitos.',
+    mal: '¡Sigue aprendiendo! La protoboard no mide distancias ni almacena información. Su función es facilitar las conexiones electrónicas.' },
+  { q: '¿Qué componente electrónico emite luz cuando circula corriente eléctrica?',
+    o: ['Resistencia.', 'Servomotor.', 'LED.', 'Sensor ultrasónico.'], c: 2, comp: 'led',
+    ok: '¡Excelente! El LED es un componente que emite luz cuando circula corriente eléctrica en el sentido adecuado.',
+    mal: '¡No te desanimes! El componente encargado de producir luz es el LED. Se utiliza frecuentemente para representar señales luminosas.' },
+  { q: '¿Para qué sirve una resistencia en un circuito electrónico?',
+    o: ['Para aumentar la velocidad del circuito.', 'Para limitar el paso de la corriente eléctrica.', 'Para emitir señales luminosas.', 'Para medir distancias.'], c: 1, comp: 'resistencia',
+    ok: '¡Muy bien! La resistencia limita la corriente eléctrica y ayuda a proteger componentes como los LED.',
+    mal: '¡Casi lo logras! Recuerda que la resistencia controla el paso de la corriente eléctrica y ayuda a evitar que circule una corriente excesiva.' },
+  { q: '¿Cuál es la función de los cables jumper?',
+    o: ['Producir movimiento.', 'Emitir luz.', 'Conectar los componentes electrónicos.', 'Detectar objetos.'], c: 2, comp: 'jumper',
+    ok: '¡Excelente! Los cables jumper permiten establecer conexiones entre el Arduino, la protoboard y otros componentes.',
+    mal: '¡Inténtalo otra vez! Los cables jumper sirven para conectar los diferentes elementos de un circuito electrónico.' },
+  { q: '¿Cómo funciona el sensor ultrasónico HC-SR04?',
+    o: ['Utiliza ondas ultrasónicas para detectar objetos y medir distancias.', 'Genera luz mediante corriente eléctrica.', 'Controla directamente la velocidad de un computador.', 'Almacena programas.'], c: 0, comp: 'sensor',
+    ok: '¡Muy bien! El sensor HC-SR04 emite ondas ultrasónicas y calcula la distancia de un objeto a partir del tiempo que tarda en regresar el eco.',
+    mal: '¡Sigue intentándolo! Este sensor no almacena programas ni genera luz. Su función es detectar objetos y medir distancias mediante ultrasonido.' },
+  { q: '¿Para qué se utiliza el servomotor SG90?',
+    o: ['Para limitar la corriente eléctrica.', 'Para controlar movimientos y posiciones angulares.', 'Para realizar conexiones sin soldar.', 'Para detectar la temperatura.'], c: 1, comp: 'servo',
+    ok: '¡Excelente! El servomotor SG90 permite controlar la posición angular de su eje, por lo que es útil en proyectos de robótica.',
+    mal: '¡No te preocupes! El servomotor es un dispositivo que produce movimientos controlados y permite posicionar su eje en determinados ángulos.' },
+  { q: '¿Qué componente permite controlar otros dispositivos mediante instrucciones programadas?',
+    o: ['LED.', 'Protoboard.', 'Arduino UNO.', 'Resistencia.'], c: 2, comp: 'arduino',
+    ok: '¡Muy bien! El Arduino UNO ejecuta el programa y controla los componentes conectados mediante sus entradas y salidas.',
+    mal: '¡Inténtalo nuevamente! Recuerda que el Arduino UNO es la placa encargada de ejecutar las instrucciones programadas.' },
+  { q: 'Si deseas conectar un LED al Arduino UNO y protegerlo de una corriente excesiva, ¿qué componente necesitas?',
+    o: ['Sensor ultrasónico.', 'Servomotor.', 'Resistencia.', 'Cable jumper.'], c: 2, comp: 'resistencia',
+    ok: '¡Excelente! La resistencia permite limitar la corriente que circula por el LED y ayuda a protegerlo.',
+    mal: '¡Sigue aprendiendo! Para proteger un LED necesitas una resistencia correctamente dimensionada que limite la corriente eléctrica.' },
+  { q: '¿Cuál de los siguientes componentes permite detectar la distancia de un objeto mediante ondas sonoras de alta frecuencia?',
+    o: ['Servomotor SG90.', 'Sensor ultrasónico HC-SR04.', 'LED.', 'Protoboard.'], c: 1, comp: 'sensor',
+    ok: '¡Felicidades! El sensor ultrasónico HC-SR04 utiliza ondas sonoras de alta frecuencia para detectar objetos y calcular distancias.',
+    mal: '¡Buen intento! El componente que realiza esta función es el sensor ultrasónico HC-SR04, utilizado en diferentes proyectos de robótica.' }
+];
+
+// Mensaje final según la nota (siempre positivo). desde = nota mínima (sobre 10)
+const MENSAJES = [
+  { desde: 10, texto: '¡Perfecto! Eres todo un experto en componentes electrónicos. ¡Felicitaciones!' },
+  { desde: 8,  texto: '¡Excelente trabajo! Dominas muy bien los componentes electrónicos. ¡Sigue así!' },
+  { desde: 6,  texto: '¡Muy bien! Vas por un gran camino. Con un poco más de práctica lo lograrás todo.' },
+  { desde: 4,  texto: '¡Buen intento! Repasa los componentes y vuelve a probar: cada intento te hace mejorar.' },
+  { desde: 0,  texto: '¡Gracias por participar! Equivocarse es parte de aprender. ¡Repasa y vuelve a intentarlo, tú puedes!' }
+];
+
+// Pantalla de la prueba (todo en metros de escena; el mural mide 1)
+// ancho = ancho de las tarjetas | altoPregunta / altoOpcion / altoRetro = alto de cada tarjeta | espacioOpcion = separación entre opciones | hueco = separación entre bloques
+// anchoComp = ancho de la tarjeta donde aparece el componente | tamComp = tamaño del componente | z = cuánto flota delante | vel = giro (rad/s)
+// btn = ancho de cada botón | gapBtn = espacio entre los dos botones | verde / rojo = colores de acierto y error
+const PRUEBA = {
+  ancho: 0.9, altoPregunta: 0.3, altoOpcion: 0.14, espacioOpcion: 0.025, hueco: 0.04,
+  altoRetro: 0.3, anchoComp: 0.27, gapRetro: 0.03, tamComp: 0.2, z: 0.1, vel: 0.9,
+  btn: 0.43, gapBtn: 0.04,
+  verde: 0x14803a, verdeBorde: 0x9dffbf, rojo: 0xb3202f, rojoBorde: 0xffb3b3
+};
+
+// ===================== INFORMACIÓN (Objetivo, Destreza, Indicador) =====================
+// Los 3 botones se dibujan en 3D con el mismo estilo de los demás: marco plateado, cara roja y letra blanca en cursiva.
+// ancho / alto = tamaño de cada botón | espacio = separación vertical | btnReg = ancho del botón Regresar | cara / borde = colores
+const BOTON_INFO = { ancho: 0.8, alto: 0.23, espacio: 0.13, btnReg: 0.5, hueco: 0.14, cara: 0xd8232a, borde: 0x7a0b11 };
+const BOTONES_INFO = [
+  { texto: 'Objetivo', ficha: 'objetivo' },
+  { texto: 'Destreza', ficha: 'destreza' },
+  { texto: 'Indicador', ficha: 'indicador' }
+];
+const FICHAS = {
+  objetivo: { titulo: 'Objetivo de Unidad', secciones: [
+    { etiqueta: 'O.ICD.4.1.', texto: 'Comprender conceptos fundamentales de informática, programación y robótica mediante la exploración de herramientas digitales, sistemas operativos y componentes electrónicos, reconociendo sus características, funciones, conexiones básicas y aplicaciones en situaciones de la vida cotidiana.' }
+  ] },
+  destreza: { titulo: 'Destreza', secciones: [
+    { etiqueta: 'PR.4.1.50.', texto: 'Integra y selecciona las partes principales de los componentes electrónicos como: protoboard, placa Arduino, leds, cables jumper, tipos de sensores, servomotores, relés entre otros, seleccionándolos según su función y la necesidad.' }
+  ] },
+  indicador: { titulo: 'Indicador de Evaluación', secciones: [
+    { etiqueta: 'Criterio de evaluación · CE.ICD.PR.4.4.', texto: 'Analiza el funcionamiento de sistemas robóticos, relacionando energía, electricidad, motores, sensores y principios físicos con el movimiento y funcionamiento de los robots.' },
+    { etiqueta: 'Indicador · Ref.I.ICD.PR.4.1.4.', texto: 'Identifica e integra los principales componentes electrónicos, como protoboard, placa Arduino, LED y cables jumper, reconociendo sus funciones y seleccionándolos según las necesidades.' }
+  ] }
+};
+// Panel de texto de cada ficha: tamaño y botón Regresar
+const FICHA = { ancho: 0.9, alto: 1.1, hueco: 0.06, btn: 0.5 };
+
+// Pantalla de resultado: tarjeta con el trofeo girando, la nota y el mensaje. Alrededor del trofeo giran componentes.
+// tamTrofeo = tamaño del trofeo | tamOrbita = tamaño de cada componente que lo rodea | radioOrbita = qué tan abierto es el círculo
+const RESULTADO = { ancho: 0.9, alto: 1.2, hueco: 0.05, btn: 0.43, gapBtn: 0.04, tamTrofeo: 0.62, tamOrbita: 0.13, radioOrbita: 0.36, z: 0.2 };
+
+// Insignia (botón de arriba, en medio). x: 0 = centro | bajar: qué tanto baja desde el borde de arriba
+// z: cuánto sale hacia ti | tam: tamaño (fracción del ancho del mural)
+const INSIGNIA = { x: 0, bajar: -0.02, z: 0.005, tam: 0.14 };
+
+// Botón Empezar (sobre la base del mural). x: 0 = centro | y: altura desde el borde de abajo
+// z: cuánto sale hacia ti | tam: ancho del botón (fracción del ancho del mural)
+const EMPEZAR = { x: 0, y: 0.065, z: 0.005, tam: 0.38 };
+
+// Menú: tam = ancho de cada botón (el mural mide 1) | espacio = separación vertical entre botones
+const MENU = { tam: 0.8, espacio: 0.18 };
+
+// Video: archivo | tam = ancho de la pantalla (el mural mide 1; el alto sale solo del formato del video)
+// btn = ancho del botón Regresar | espacio = separación entre video y botón | icono = tamaño del símbolo de play
+// marco = ancho del borde | fondo = grosor de la placa de atrás | relieve = cuánto sobresale el borde hacia ti
+const VIDEO = {
+  archivo: 'Video/video.mp4', tam: 0.6, btn: 0.5, espacio: 0.12, icono: 0.22,
+  marco: 0.035, fondo: 0.06, relieve: 0.03,
+  colorMarco: 0xfac31a, colorFondo: 0x3a070c
+};
+
+// Contenido: cada componente va en una tarjeta con marco dorado y su nombre abajo. El primero (Arduino) va en el centro
+// y los demás lo rodean en círculo.
+// tarjetaAncho/Alto = tamaño de la tarjeta | radio = qué tan lejos del centro van las tarjetas de alrededor
+// celda = tamaño del componente dentro de la tarjeta | alzar = cuánto sube (para dejar sitio al nombre) | z = cuánto flota delante de la tarjeta
+// btn = ancho de cada botón de abajo | gap = espacio entre los dos botones | espacio = separación tarjetas-botones | vel = giro (rad/s)
+const CONTENIDO = {
+  tarjetaAncho: 0.34, tarjetaAlto: 0.38, radio: 0.44,
+  celda: 0.25, alzar: 0.04, z: 0.11,
+  btn: 0.52, gap: 0.06, espacio: 0.1, vel: 0.9
+};
+
+// Detalle (componente grande): el componente a la izquierda (gira solo 360° y también se gira con el dedo o el mouse) y el panel de información a la derecha
+// tam = tamaño del componente | hueco = espacio entre componente y panel | panelAncho/panelAlto = tamaño del panel
+// btn = ancho del botón Regresar | espacio = separación entre el panel y el botón
+const DETALLE = { tam: 0.85, hueco: 0.06, panelAncho: 0.9, panelAlto: 1.2, btn: 0.5, espacio: 0.1 };
+
+const VISOR_FOV = 40;
+const AR_FOV = 63;
+const AR_DISTANCIA = 0.9;     // metros frente a la cámara
+const SUAVIDAD_GIRO = 6;
+const SEGUIR_ESCENA = 3.5;
+
+const ESCENAS = {
+  portada: {
+    arTamano: 0.40,
+    encuadre: { alto: 1.35, ancho: 1.2, anchoH: 1.6 },
+    vista: () => new THREE.Quaternion()   // recta, de frente
+  },
+  menu: {
+    arTamano: 0.40,
+    encuadre: { alto: 1.35, ancho: 1.2, anchoH: 1.6 },   // el alto se recalcula solo al armar el menú
+    vista: () => new THREE.Quaternion()
+  },
+  video: {
+    arTamano: 0.40,
+    encuadre: { alto: 1.6, ancho: 1.2, anchoH: 1.6 },   // el alto se recalcula solo según el video
+    vista: () => new THREE.Quaternion()
+  },
+  contenido: {
+    arTamano: 0.40,
+    encuadre: { alto: 2, ancho: 1.2, anchoH: 1.6 },     // el alto se recalcula solo al armar la escena
+    vista: () => new THREE.Quaternion()
+  },
+  detalle: {
+    arTamano: 0.32,
+    encuadre: { alto: 1.9, ancho: 1.2, anchoH: 1.6 },   // el alto se recalcula solo al armar la escena
+    vista: () => new THREE.Quaternion()
+  },
+  prueba: {
+    arTamano: 0.40,
+    encuadre: { alto: 2, ancho: 1.1, anchoH: 1.1 },     // se recalcula solo al armar la escena
+    vista: () => new THREE.Quaternion()
+  },
+  resultado: {
+    arTamano: 0.40,
+    encuadre: { alto: 2, ancho: 1.1, anchoH: 1.1 },     // se recalcula solo al armar la escena
+    vista: () => new THREE.Quaternion()
+  },
+  info: {
+    arTamano: 0.40,
+    encuadre: { alto: 1.6, ancho: 1.1, anchoH: 1.1 },   // se recalcula solo al armar la escena
+    vista: () => new THREE.Quaternion()
+  },
+  infoTexto: {
+    arTamano: 0.40,
+    encuadre: { alto: 1.6, ancho: 1.1, anchoH: 1.1 },   // se recalcula solo al armar la escena
+    vista: () => new THREE.Quaternion()
+  }
+};
+
+// ===================== ELEMENTOS =====================
+const $ = (id) => document.getElementById(id);
+const ui = $('ui'), gestos = $('gestos'), video = $('cam'), canvas = $('gl'), aviso = $('aviso');
+const btnAR = $('btnAR'), inicioEl = $('inicioAR'), inicioBtn = $('inicioBtn'), inicioMsg = $('inicioMsg');
+const soloAR = new URLSearchParams(window.location.search).has('ar');   // enlace del QR: ...?ar
+if (soloAR) $('inicio3D').hidden = true;
+
+// ===================== ESCENA =====================
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setClearColor(0x000000, 0);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+const generadorEntorno = new THREE.PMREMGenerator(renderer);
+scene.environment = generadorEntorno.fromScene(new RoomEnvironment(), 0.04).texture;
+generadorEntorno.dispose();
+const sol = new THREE.DirectionalLight(0xffffff, 1.2);
+sol.position.set(1, 2, 3);
+scene.add(sol, new THREE.AmbientLight(0xffffff, 0.35));
+
+const camera = new THREE.PerspectiveCamera(VISOR_FOV, innerWidth / innerHeight, 0.05, 50);
+scene.add(camera);
+
+// rig = posición y tamaño en el mundo, pivot = giro que hace la persona
+const rig = new THREE.Group();
+const pivot = new THREE.Group();
+rig.add(pivot);
+scene.add(rig);
+
+// ===================== ESTADO =====================
+let modo = 'visor';            // 'visor' | 'ar'
+let escenaActual = 'portada';
+let distVisor = 2, zoomVisor = 1, arEscala = 1;
+let colocado = false, flujo = null, iniciandoAR = false, intentoAR = 0;
+let timerAvisoCam = null, timerGiro = null, timerAviso = null;
+let tAparicion = 0, presion = null;
+const objetivo = new THREE.Quaternion();
+const mundo = {};              // nombre de escena -> { soporte, botones }
+
+// ===================== UTILIDADES =====================
+function mostrarAviso(texto, esError = false, ms = 0) {
+  clearTimeout(timerAviso);
+  aviso.textContent = texto;
+  aviso.classList.toggle('error', esError);
+  aviso.hidden = false;
+  if (!inicioEl.hidden) { inicioMsg.textContent = texto; inicioMsg.classList.toggle('error', esError); }
+  if (ms > 0) timerAviso = setTimeout(() => { aviso.hidden = true; }, ms);
+}
+function ocultarAviso() { clearTimeout(timerAviso); aviso.hidden = true; }
+
+const vistaInicial = () => ESCENAS[escenaActual].vista();
+const tamanoAR = () => ESCENAS[escenaActual].arTamano * arEscala;
+
+function calcularDistanciaVisor() {
+  const enc = ESCENAS[escenaActual].encuadre;
+  const aspecto = innerWidth / innerHeight;
+  const mitad = Math.tan(THREE.MathUtils.degToRad(VISOR_FOV / 2));
+  const ancho = aspecto < 1 ? enc.ancho : enc.anchoH;
+  distVisor = Math.max(enc.alto / (2 * mitad), ancho / (2 * mitad * aspecto));
+}
+function redimensionar() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  calcularDistanciaVisor();
+}
+addEventListener('resize', redimensionar);
+redimensionar();
+
+// ===================== CARGAR Y ARMAR =====================
+const cargador = new GLTFLoader();
+// Descompresores para .glb optimizados: Draco (geometría, en hilos aparte), Meshopt y KTX2 (texturas comprimidas)
+const CDN3D = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/';
+const draco = new DRACOLoader().setDecoderPath(CDN3D + 'draco/gltf/');
+draco.setWorkerLimit(2);
+draco.preload();                       // baja el decodificador mientras ves la pantalla de inicio
+cargador.setDRACOLoader(draco);
+cargador.setMeshoptDecoder(MeshoptDecoder);
+const ktx2 = new KTX2Loader().setTranscoderPath(CDN3D + 'basis/').detectSupport(renderer);
+cargador.setKTX2Loader(ktx2);
+// Los bytes se bajan por red (casi sin costo de CPU) y se guardan; el trabajo pesado se hace después, en trocitos
+const bajar = (archivo) => (window.__pre[archivo] || (window.__pre[archivo] = fetch(archivo).then((r) => {
+  if (!r.ok) throw new Error(archivo);
+  return r.arrayBuffer();
+})));
+const cargar = (archivo) => bajar(archivo).then(
+  (buf) => new Promise((ok, mal) => {
+    try { cargador.parse(buf, '', (g) => { delete window.__pre[archivo]; ok(g); }, (e) => mal(e || archivo)); }
+    catch (e) { mal(e); }
+  }),
+  () => Promise.reject(archivo)
+);
+
+// ---- Reparto del trabajo: cada paso pesado va en su propio turno para que la pantalla, el cursor y los toques sigan respondiendo ----
+const cederPaso = () => (window.scheduler && window.scheduler.yield ? window.scheduler.yield() : new Promise((r) => setTimeout(r, 0)));
+// Si hay un dedo (o el mouse) apoyado en la pantalla, el trabajo en segundo plano espera a que lo sueltes
+async function dedoLibre() { while (punteros.size > 0) await new Promise((r) => setTimeout(r, 120)); }
+
+// Las texturas gigantes se reducen: pesan menos en memoria y se suben a la tarjeta gráfica mucho más rápido
+const TEXTURA_MAX = 2048;
+const texturasDe = (objeto) => {
+  const set = new Set();
+  objeto.traverse((m) => {
+    if (!m.isMesh || !m.material) return;
+    for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) if (mt.map && !mt.map.isVideoTexture) set.add(mt.map);
+  });
+  return set;
+};
+async function reducirTexturas(objeto) {
+  const porImagen = new Map();
+  for (const t of texturasDe(objeto)) {
+    const img = t.image;
+    if (t.isCompressedTexture || !img || !img.width || !img.height || typeof img.close === 'undefined' && !(img instanceof HTMLImageElement) && !(img instanceof HTMLCanvasElement)) continue;
+    if (Math.max(img.width, img.height) <= TEXTURA_MAX) continue;
+    if (!porImagen.has(img)) porImagen.set(img, []);
+    porImagen.get(img).push(t);
+  }
+  for (const [img, lista] of porImagen) {
+    await cederPaso();
+    const k = TEXTURA_MAX / Math.max(img.width, img.height);
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(img.width * k));
+    cv.height = Math.max(1, Math.round(img.height * k));
+    const c2d = cv.getContext('2d');
+    c2d.imageSmoothingQuality = 'high';
+    c2d.drawImage(img, 0, 0, cv.width, cv.height);
+    for (const t of lista) { t.image = cv; t.needsUpdate = true; }
+    if (img.close) img.close();      // libera la imagen grande original
+  }
+}
+
+// Texturas sin que la luz las lave; sin normales, se calculan suaves (una malla por turno: es lo más pesado)
+async function suavizar(objeto) {
+  const sinLuz = new Map();
+  const faltan = [];
+  objeto.traverse((m) => {
+    if (!m.isMesh) return;
+    if (m.material.map) {
+      if (!sinLuz.has(m.material)) {
+        sinLuz.set(m.material, new THREE.MeshBasicMaterial({
+          map: m.material.map, alphaTest: 0.5, side: THREE.DoubleSide, toneMapped: false
+        }));
+      }
+      m.material = sinLuz.get(m.material);
+    } else if (!m.geometry.attributes.normal) {
+      faltan.push(m);
+    }
+  });
+  for (const m of faltan) {
+    await dedoLibre();
+    await cederPaso();
+    m.geometry = toCreasedNormals(m.geometry, 0.7);
+    m.material.flatShading = false;
+    m.material.needsUpdate = true;
+  }
+}
+
+async function prepararModelo(g) {
+  await reducirTexturas(g.scene);
+  await suavizar(g.scene);
+}
+
+// Sube las texturas de una escena a la tarjeta gráfica de a una, para que el primer dibujo no se trabe
+async function calentar(soporte) {
+  for (const t of texturasDe(soporte)) {
+    await dedoLibre();
+    await cederPaso();
+    try { renderer.initTexture(t); } catch (e) { /* si falla, se sube al dibujar */ }
+  }
+}
+let colaCalentar = Promise.resolve();
+const encolarCalentar = (soporte) => { colaCalentar = colaCalentar.then(() => calentar(soporte)).catch(() => {}); };
+
+function armarPortada(mural, insignia, empezar) {
+  const contenido = new THREE.Group();
+  contenido.add(mural);
+  const caja = new THREE.Box3().setFromObject(mural);
+  const ancho = caja.getSize(new THREE.Vector3()).x;
+  const centroX = (caja.min.x + caja.max.x) / 2;
+
+  // Profundidad real del logo (no de la base): un rayo desde el frente, a la altura del Arduino
+  contenido.updateMatrixWorld(true);
+  const alto = caja.max.y - caja.min.y;
+  const rayoZ = new THREE.Raycaster();
+  let zFrente = -Infinity;
+  for (const f of [0.12, 0.2, 0.28]) {
+    rayoZ.set(new THREE.Vector3(centroX, caja.max.y - f * alto, caja.max.z + 1), new THREE.Vector3(0, 0, -1));
+    const h = rayoZ.intersectObject(mural, true)[0];
+    if (h) zFrente = Math.max(zFrente, h.point.z);
+  }
+  if (zFrente === -Infinity) zFrente = caja.max.z;
+
+  // Insignia: se centra en su propio origen y se pone arriba, en medio, pegada al logo
+  const cI = new THREE.Box3().setFromObject(insignia);
+  const tI = cI.getSize(new THREE.Vector3());
+  insignia.position.sub(cI.getCenter(new THREE.Vector3()));
+  const gIns = new THREE.Group();
+  gIns.add(insignia);
+  const escalaIns = INSIGNIA.tam * ancho / Math.max(tI.x, tI.y, tI.z);
+  gIns.position.set(centroX + INSIGNIA.x * ancho, caja.max.y - INSIGNIA.bajar * ancho, zFrente + tI.z / 2 * escalaIns + INSIGNIA.z * ancho);
+  gIns.userData.escalaBase = escalaIns;
+  gIns.scale.setScalar(gIns.userData.escalaBase);
+  gIns.userData.alTocar = () => {   // abre Objetivo / Destreza / Indicador
+    presion = { boton: gIns, t0: performance.now() };
+    setTimeout(() => irA('info'), 220);
+  };
+  contenido.add(gIns);
+
+  // Botón Empezar: centrado sobre la base, de frente. Al tocarlo abre el menú.
+  const cE = new THREE.Box3().setFromObject(empezar);
+  const tE = cE.getSize(new THREE.Vector3());
+  empezar.position.sub(cE.getCenter(new THREE.Vector3()));
+  const gEmp = new THREE.Group();
+  gEmp.add(empezar);
+  const escalaEmp = EMPEZAR.tam * ancho / tE.x;
+  gEmp.position.set(centroX + EMPEZAR.x * ancho, caja.min.y + EMPEZAR.y * ancho, caja.max.z + tE.z / 2 * escalaEmp + EMPEZAR.z * ancho);
+  gEmp.userData.escalaBase = escalaEmp;
+  gEmp.scale.setScalar(escalaEmp);
+  gEmp.userData.alTocar = () => {
+    presion = { boton: gEmp, t0: performance.now() };
+    setTimeout(() => irA('menu'), 220);
+  };
+  contenido.add(gEmp);
+
+  contenido.position.sub(new THREE.Box3().setFromObject(contenido).getCenter(new THREE.Vector3()));
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1 / ancho;
+  soporte.scale.setScalar(soporte.userData.escala);
+  return { soporte, botones: [gIns, gEmp] };
+}
+
+// Menú: botones en columna, en el orden de la lista (el primero arriba)
+function armarMenu(lista) {
+  const contenido = new THREE.Group();
+  const botones = [];
+  let y = 0;
+  for (const { modelo, destino } of lista) {
+    const c = new THREE.Box3().setFromObject(modelo);
+    const t = c.getSize(new THREE.Vector3());
+    modelo.position.sub(c.getCenter(new THREE.Vector3()));
+    const g = new THREE.Group();
+    g.add(modelo);
+    const escala = MENU.tam / t.x;
+    const alto = t.y * escala;
+    g.position.set(0, -(y + alto / 2), 0);
+    y += alto + MENU.espacio;
+    g.userData.escalaBase = escala;
+    g.scale.setScalar(escala);
+    g.userData.alTocar = () => {
+      presion = { boton: g, t0: performance.now() };
+      if (destino) setTimeout(() => irA(destino), 220);   // sin destino: solo se hunde (por ahora)
+    };
+    contenido.add(g);
+    botones.push(g);
+  }
+  const altoTotal = y - MENU.espacio;
+  contenido.position.y = altoTotal / 2;                    // centra el grupo
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+  ESCENAS.menu.encuadre.alto = altoTotal * 1.25;           // para que quepa en el visor 3D
+  return { soporte, botones };
+}
+
+// Video vertical (formato short) como pantalla 3D: un toque lo reproduce o lo pausa. Abajo, el botón Regresar.
+function armarVideo(modeloRegresar) {
+  const vid = document.createElement('video');
+  vid.playsInline = true;
+  vid.setAttribute('playsinline', '');
+  vid.setAttribute('webkit-playsinline', '');
+  vid.preload = 'none';                                    // no baja nada hasta que entras a la escena
+  vid.loop = false;
+  vid.muted = false;                                       // con sonido
+
+  const textura = new THREE.VideoTexture(vid);
+  textura.colorSpace = THREE.SRGBColorSpace;
+  const pantalla = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ map: textura, side: THREE.DoubleSide, toneMapped: false })
+  );
+
+  // Símbolo de play: se ve cuando el video está en pausa
+  const icono = new THREE.Group();
+  const disco = new THREE.Mesh(
+    new THREE.CircleGeometry(0.5, 40),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, side: THREE.DoubleSide, toneMapped: false })
+  );
+  const forma = new THREE.Shape();
+  forma.moveTo(-0.16, -0.24); forma.lineTo(-0.16, 0.24); forma.lineTo(0.26, 0); forma.closePath();
+  const triangulo = new THREE.Mesh(
+    new THREE.ShapeGeometry(forma),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, toneMapped: false })
+  );
+  triangulo.position.z = 0.002;
+  icono.add(disco, triangulo);
+  icono.scale.setScalar(VIDEO.icono);
+  icono.position.z = 0.01;
+
+  // Marco 3D: placa trasera con grosor + borde que rodea la pantalla (como el mural)
+  const matMarco = new THREE.MeshStandardMaterial({ color: VIDEO.colorMarco, roughness: 0.4, metalness: 0.35 });
+  const matFondo = new THREE.MeshStandardMaterial({ color: VIDEO.colorFondo, roughness: 0.6, metalness: 0.2 });
+  const cubo = new THREE.BoxGeometry(1, 1, 1);
+  const placa = new THREE.Mesh(cubo, matFondo);
+  const bArriba = new THREE.Mesh(cubo, matMarco);
+  const bAbajo = new THREE.Mesh(cubo, matMarco);
+  const bIzq = new THREE.Mesh(cubo, matMarco);
+  const bDer = new THREE.Mesh(cubo, matMarco);
+  const marco = new THREE.Group();
+  marco.add(placa, bArriba, bAbajo, bIzq, bDer);
+
+  const gPantalla = new THREE.Group();
+  gPantalla.add(pantalla, icono, marco);
+  gPantalla.userData.sinLatido = true;                     // la pantalla no "late"
+  gPantalla.userData.alTocar = () => {
+    if (vid.paused) {
+      vid.play().catch(() => mostrarAviso('No se pudo reproducir el video. Revisa que exista ' + VIDEO.archivo + ' (mayúsculas incluidas).', true, 5000));
+    } else {
+      vid.pause();
+    }
+  };
+  vid.addEventListener('play', () => { icono.visible = false; });
+  vid.addEventListener('pause', () => { icono.visible = true; });   // también al terminar
+  document.addEventListener('visibilitychange', () => { if (document.hidden) vid.pause(); });
+
+  // Botón Regresar, debajo del video
+  const c = new THREE.Box3().setFromObject(modeloRegresar);
+  const t = c.getSize(new THREE.Vector3());
+  modeloRegresar.position.sub(c.getCenter(new THREE.Vector3()));
+  const gReg = new THREE.Group();
+  gReg.add(modeloRegresar);
+  const escalaReg = VIDEO.btn / t.x;
+  const altoReg = t.y * escalaReg;
+  gReg.userData.escalaBase = escalaReg;
+  gReg.scale.setScalar(escalaReg);
+  gReg.userData.alTocar = () => {
+    presion = { boton: gReg, t0: performance.now() };
+    setTimeout(() => irA('menu'), 220);
+  };
+
+  const contenido = new THREE.Group();
+  contenido.add(gPantalla, gReg);
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+
+  // Acomoda la pantalla según el formato real del video (vertical, horizontal o cuadrado)
+  let aspecto = 9 / 16;
+  function ajustar() {
+    const ancho = VIDEO.tam, alto = VIDEO.tam / aspecto;
+    const b = VIDEO.marco, D = VIDEO.fondo, R = VIDEO.relieve;
+    pantalla.scale.set(ancho, alto, 1);
+    // La pantalla va justo delante de la placa; el borde sobresale un poco más, como un marco hundido
+    gPantalla.position.z = D / 2 + 0.002;
+    marco.position.z = -(D / 2 + 0.002);
+    const e = 0.003;   // la placa queda un poco adentro del marco: así ninguna cara coincide y no hay parpadeo
+    placa.scale.set(ancho + 2 * b - 2 * e, alto + 2 * b - 2 * e, D - 2 * e);
+    bArriba.scale.set(ancho + 2 * b, b, D + R);
+    bArriba.position.set(0, alto / 2 + b / 2, R / 2);
+    bAbajo.scale.set(ancho + 2 * b, b, D + R);
+    bAbajo.position.set(0, -(alto / 2 + b / 2), R / 2);
+    bIzq.scale.set(b, alto, D + R);
+    bIzq.position.set(-(ancho / 2 + b / 2), 0, R / 2);
+    bDer.scale.set(b, alto, D + R);
+    bDer.position.set(ancho / 2 + b / 2, 0, R / 2);
+    gReg.position.set(0, -(alto / 2 + b + VIDEO.espacio + altoReg / 2), 0);
+    const total = alto + 2 * b + VIDEO.espacio + altoReg;
+    contenido.position.y = (VIDEO.espacio + altoReg) / 2;  // centra todo el conjunto
+    ESCENAS.video.encuadre.alto = total * 1.25;
+    if (escenaActual === 'video') calcularDistanciaVisor();
+  }
+  vid.addEventListener('loadedmetadata', () => {
+    if (vid.videoWidth && vid.videoHeight) aspecto = vid.videoWidth / vid.videoHeight;
+    ajustar();
+  });
+  ajustar();
+
+  const alEntrar = () => {                                 // el video empieza a bajar solo cuando llegas aquí
+    if (!vid.getAttribute('src')) { vid.preload = 'auto'; vid.src = VIDEO.archivo; vid.load(); }
+  };
+  return { soporte, botones: [gPantalla, gReg], pausar: () => vid.pause(), alEntrar };
+}
+
+// Centra un modelo y lo escala para que quepa en un círculo de ese diámetro (sin importar su tamaño original).
+// inclinar: se echa hacia ti. Así, al girar sobre el eje vertical, siempre se ve bien.
+function prepararPieza(modelo, diametro, inclinar) {
+  const c = new THREE.Box3().setFromObject(modelo);
+  const t = c.getSize(new THREE.Vector3());
+  modelo.position.sub(c.getCenter(new THREE.Vector3()));
+  const escalador = new THREE.Group();
+  escalador.add(modelo);
+  escalador.scale.setScalar(diametro / t.length());
+  const inclinado = new THREE.Group();
+  inclinado.rotation.x = inclinar;
+  inclinado.add(escalador);
+  return inclinado;
+}
+
+// Botón 3D de ancho fijo; al tocarlo se hunde y (si tiene destino) cambia de escena
+function hacerBoton(modelo, ancho, destino) {
+  const c = new THREE.Box3().setFromObject(modelo);
+  const t = c.getSize(new THREE.Vector3());
+  modelo.position.sub(c.getCenter(new THREE.Vector3()));
+  const g = new THREE.Group();
+  g.add(modelo);
+  const escala = ancho / t.x;
+  g.userData.escalaBase = escala;
+  g.userData.alto = t.y * escala;
+  g.scale.setScalar(escala);
+  g.userData.alTocar = () => {
+    presion = { boton: g, t0: performance.now() };
+    if (destino) setTimeout(() => (typeof destino === 'function' ? destino() : irA(destino)), 220);   // destino: nombre de escena o una función
+  };
+  return g;
+}
+
+// Rectángulo con las esquinas redondeadas
+function rectRedondo(w, h, r) {
+  const f = new THREE.Shape();
+  const x = -w / 2, y = -h / 2;
+  f.moveTo(x + r, y);
+  f.lineTo(x + w - r, y);     f.quadraticCurveTo(x + w, y, x + w, y + r);
+  f.lineTo(x + w, y + h - r); f.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  f.lineTo(x + r, y + h);     f.quadraticCurveTo(x, y + h, x, y + h - r);
+  f.lineTo(x, y + r);         f.quadraticCurveTo(x, y, x + r, y);
+  return f;
+}
+
+// Texto como una lámina 3D (se reduce solo si el nombre es largo)
+function crearEtiqueta(texto, ancho, alto) {
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = Math.round(512 * alto / ancho);
+  const ctx = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const pintar = () => {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    let px = Math.round(cv.height * 0.55);
+    ctx.font = '800 ' + px + 'px Manrope, system-ui, sans-serif';
+    while (ctx.measureText(texto).width > cv.width * 0.92 && px > 12) {
+      px -= 2;
+      ctx.font = '800 ' + px + 'px Manrope, system-ui, sans-serif';
+    }
+    ctx.fillStyle = '#e9f3f1';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(texto, cv.width / 2, cv.height / 2);
+    tex.needsUpdate = true;
+  };
+  pintar();
+  if (document.fonts && document.fonts.load) document.fonts.load('800 40px Manrope').then(pintar).catch(() => {});
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(ancho, alto),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false })
+  );
+}
+
+// Contenido: el primer componente en el centro y los demás en círculo a su alrededor, cada uno en su tarjeta,
+// girando solos. Al tocar una se abre el componente grande.
+// Abajo: Regresar (al menú) y Avanzar (abre la prueba de conocimiento).
+function armarContenido(piezas, modeloRegresar, modeloAvanzar) {
+  const contenido = new THREE.Group();
+  const botones = [];
+  const n = piezas.length;
+  const TW = CONTENIDO.tarjetaAncho, TH = CONTENIDO.tarjetaAlto, R = CONTENIDO.radio;
+
+  // Tarjeta: marco dorado + fondo oscuro un poco más adelante (las caras no coinciden, así no parpadea)
+  const geoOro = new THREE.ExtrudeGeometry(rectRedondo(TW, TH, 0.035), { depth: 0.016, bevelEnabled: false });
+  const geoFondo = new THREE.ExtrudeGeometry(rectRedondo(TW - 0.022, TH - 0.022, 0.026), { depth: 0.018, bevelEnabled: false });
+  const matOro = new THREE.MeshStandardMaterial({ color: VIDEO.colorMarco, roughness: 0.4, metalness: 0.35 });
+  const matFondo = new THREE.MeshStandardMaterial({ color: 0x3a070c, roughness: 0.6, metalness: 0.2 });
+
+  piezas.forEach((p, i) => {
+    // i = 0: centro. Los demás: en círculo, empezando arriba y siguiendo las agujas del reloj
+    const ang = Math.PI / 2 - (i - 1) * 2 * Math.PI / Math.max(n - 1, 1);
+    const g = new THREE.Group();
+    if (i > 0) g.position.set(Math.cos(ang) * R, Math.sin(ang) * R, 0);
+
+    const oro = new THREE.Mesh(geoOro, matOro);
+    oro.position.z = -0.01;
+    const fondo = new THREE.Mesh(geoFondo, matFondo);
+    fondo.position.z = -0.008;
+    g.add(oro, fondo);
+
+    const nombre = crearEtiqueta(p.nombre, TW - 0.05, 0.06);
+    nombre.position.set(0, -TH / 2 + 0.05, 0.013);
+    g.add(nombre);
+
+    // El componente flota delante de la tarjeta y gira sobre su centro
+    const girador = new THREE.Group();
+    girador.add(prepararPieza(p.modelo, CONTENIDO.celda * (p.zoom || 1), p.inclinar));
+    girador.position.set(0, CONTENIDO.alzar, CONTENIDO.z);
+    g.add(girador);
+
+    g.userData.sinLatido = true;
+    g.userData.girar = (ahora) => { girador.rotation.y = ahora / 1000 * CONTENIDO.vel + i * 0.8; };
+    g.userData.alTocar = () => abrirDetalle(p.clave);   // tocar el componente o la tarjeta
+    contenido.add(g);
+    botones.push(g);
+  });
+
+  // Botones de abajo: Regresar a la izquierda, Avanzar a la derecha
+  const gReg = hacerBoton(modeloRegresar, CONTENIDO.btn, 'menu');
+  const gAv = hacerBoton(modeloAvanzar, CONTENIDO.btn, () => iniciarPrueba());
+  const altoBtn = Math.max(gReg.userData.alto, gAv.userData.alto);
+  const arriba = R + TH / 2;
+  const yBtn = -(R + TH / 2) - CONTENIDO.espacio - altoBtn / 2;
+  const dx = CONTENIDO.btn / 2 + CONTENIDO.gap / 2;
+  gReg.position.set(-dx, yBtn, 0);
+  gAv.position.set(dx, yBtn, 0);
+  contenido.add(gReg, gAv);
+  botones.push(gReg, gAv);
+
+  const abajo = yBtn - altoBtn / 2;
+  contenido.position.y = -(arriba + abajo) / 2;            // centra todo el conjunto
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+  const anchoTotal = 2 * (Math.cos(Math.PI / 6) * R + TW / 2);
+  ESCENAS.contenido.encuadre.alto = (arriba - abajo) * 1.35;   // deja aire para que el botón AR de la pantalla no tape nada
+  ESCENAS.contenido.encuadre.ancho = Math.max(anchoTotal, 2 * dx + CONTENIDO.btn) * 1.12;
+  ESCENAS.contenido.encuadre.anchoH = ESCENAS.contenido.encuadre.ancho;
+  return { soporte, botones };
+}
+
+// Panel de información: un texto dibujado en una lámina 3D. Se vuelve a dibujar con la info de cada componente.
+// El tamaño de letra se ajusta solo para que todo el texto quepa.
+function crearPanelInfo(ancho, alto) {
+  const W = 1024, H = Math.round(W * alto / ancho);
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const FUENTE = 'Manrope, system-ui, sans-serif';
+  const ORO = '#fac31a', CLARO = '#e9f3f1';
+  const pad = 60;
+  let actual = null;
+
+  // Calcula dónde va cada línea con un tamaño de letra px
+  const armar = (info, px) => {
+    const ops = [];
+    let y = pad;
+    const texto = (cad, size, peso, color, x = pad, maxW = W - 2 * pad) => {
+      ctx.font = peso + ' ' + size + 'px ' + FUENTE;
+      const lineas = [];
+      let linea = '';
+      for (const palabra of cad.split(' ')) {
+        const prueba = linea ? linea + ' ' + palabra : palabra;
+        if (ctx.measureText(prueba).width > maxW && linea) { lineas.push(linea); linea = palabra; }
+        else linea = prueba;
+      }
+      if (linea) lineas.push(linea);
+      for (const l of lineas) { ops.push({ t: 'txt', txt: l, x, y, size, peso, color }); y += size * 1.32; }
+    };
+    const separador = () => { y += px * 0.3; ops.push({ t: 'linea', y }); y += px * 0.3; };
+
+    texto(info.titulo, px * 1.3, 800, ORO);
+    separador();
+    texto(info.pregunta, px * 0.95, 800, ORO);
+    y += px * 0.12;
+    texto(info.que, px, 500, CLARO);
+    separador();
+    texto('Función principal:', px * 0.95, 800, ORO);
+    y += px * 0.12;
+    for (const f of info.funciones) {
+      ops.push({ t: 'punto', x: pad + px * 0.2, y: y + px * 0.66, r: px * 0.13 });
+      texto(f, px, 500, CLARO, pad + px * 0.85, W - 2 * pad - px * 0.85);
+      y += px * 0.22;
+    }
+    return { ops, fin: y };
+  };
+
+  const dibujar = (info) => {
+    actual = info;
+    ctx.clearRect(0, 0, W, H);
+    let plan;
+    for (let px = 58; px >= 22; px -= 2) {
+      plan = armar(info, px);
+      if (plan.fin + pad <= H) break;
+    }
+    const dy = Math.max(0, (H - pad - plan.fin) / 2);   // centrado en vertical
+    ctx.textBaseline = 'top';
+    for (const o of plan.ops) {
+      if (o.t === 'txt') {
+        ctx.font = o.peso + ' ' + o.size + 'px ' + FUENTE;
+        ctx.fillStyle = o.color;
+        ctx.fillText(o.txt, o.x, o.y + dy);
+      } else if (o.t === 'linea') {
+        ctx.strokeStyle = 'rgba(250, 195, 26, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(pad, o.y + dy); ctx.lineTo(W - pad, o.y + dy); ctx.stroke();
+      } else {
+        ctx.fillStyle = ORO;
+        ctx.beginPath(); ctx.arc(o.x, o.y + dy, o.r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    tex.needsUpdate = true;
+  };
+  // Cuando la tipografía termina de cargar, se vuelve a dibujar
+  if (document.fonts && document.fonts.load) {
+    Promise.all([document.fonts.load('500 40px Manrope'), document.fonts.load('800 40px Manrope')])
+      .then(() => { if (actual) dibujar(actual); }).catch(() => {});
+  }
+  const malla = new THREE.Mesh(
+    new THREE.PlaneGeometry(ancho, alto),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false })
+  );
+  return { malla, dibujar };
+}
+
+// Detalle: a la izquierda el componente elegido (gira solo y también se gira con el dedo o el mouse, en su sitio); a la derecha el panel con la
+// información; abajo el botón Regresar. Solo gira el componente: el panel y el botón se quedan quietos.
+function armarDetalle(piezas, modeloRegresar) {
+  const contenido = new THREE.Group();
+  const D = DETALLE;
+  const anchoTotal = D.tam + D.hueco + D.panelAncho;
+  const xModelo = -anchoTotal / 2 + D.tam / 2;
+  const xPanel = anchoTotal / 2 - D.panelAncho / 2;
+
+  // Componente (a la izquierda). "girable" es el grupo que se gira con el dedo.
+  const girable = new THREE.Group();
+  girable.position.set(xModelo, 0, 0);
+  const modelos = {};
+  const infos = {};
+  for (const pz of piezas) {
+    const g = prepararPieza(pz.modelo, D.tam, pz.inclinar);
+    g.visible = false;
+    girable.add(g);
+    modelos[pz.clave] = g;
+    infos[pz.clave] = pz.info;
+  }
+  contenido.add(girable);
+
+  // Panel de información (a la derecha): marco dorado + fondo oscuro + texto
+  const PW = D.panelAncho, PH = D.panelAlto;
+  const panel = new THREE.Group();
+  panel.position.set(xPanel, 0, 0);
+  const oro = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(rectRedondo(PW, PH, 0.05), { depth: 0.016, bevelEnabled: false }),
+    new THREE.MeshStandardMaterial({ color: VIDEO.colorMarco, roughness: 0.4, metalness: 0.35 })
+  );
+  oro.position.z = -0.01;
+  const fondo = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(rectRedondo(PW - 0.022, PH - 0.022, 0.04), { depth: 0.018, bevelEnabled: false }),
+    new THREE.MeshStandardMaterial({ color: 0x3a070c, roughness: 0.6, metalness: 0.2 })
+  );
+  fondo.position.z = -0.008;
+  const info = crearPanelInfo(PW - 0.03, PH - 0.03);
+  info.malla.position.z = 0.013;
+  panel.add(oro, fondo, info.malla);
+  contenido.add(panel);
+
+  // Botón Regresar, debajo del panel, centrado
+  const gReg = hacerBoton(modeloRegresar, D.btn, 'contenido');
+  const yBtn = -(PH / 2 + D.espacio + gReg.userData.alto / 2);
+  gReg.position.set(0, yBtn, 0);
+  contenido.add(gReg);
+
+  const arriba = PH / 2;
+  const abajo = yBtn - gReg.userData.alto / 2;
+  contenido.position.y = -(arriba + abajo) / 2;            // centra todo el conjunto
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+  ESCENAS.detalle.encuadre.alto = (arriba - abajo) * 1.35;
+  ESCENAS.detalle.encuadre.ancho = anchoTotal * 1.12;
+  ESCENAS.detalle.encuadre.anchoH = anchoTotal * 1.12;
+
+  const mostrar = (clave) => {
+    for (const k in modelos) modelos[k].visible = k === clave;
+    girable.quaternion.identity();                         // cada componente arranca de frente
+    info.dibujar(infos[clave]);
+  };
+
+  // Giro automático: el componente da vueltas solo (misma velocidad que en las tarjetas).
+  // Mientras tocas con el dedo o el mouse se pausa, y al soltar sigue girando desde donde lo dejaste.
+  let tPrev = performance.now();
+  const ejeY = new THREE.Vector3(0, 1, 0);
+  const qAuto = new THREE.Quaternion();
+  const alAnimar = () => {
+    const ahora = performance.now();
+    const dt = Math.min((ahora - tPrev) / 1000, 0.1);
+    tPrev = ahora;
+    if (punteros.size > 0) return;
+    girable.quaternion.premultiply(qAuto.setFromAxisAngle(ejeY, CONTENIDO.vel * dt));
+  };
+  return { soporte, botones: [gReg], girable, mostrar, alAnimar };
+}
+
+// ===================== TARJETAS CON TEXTO =====================
+const FUENTE_TXT = 'Manrope, system-ui, sans-serif';
+
+function lineasDe(ctx, texto, maxW) {
+  const lineas = [];
+  let linea = '';
+  for (const palabra of texto.split(' ')) {
+    const prueba = linea ? linea + ' ' + palabra : palabra;
+    if (ctx.measureText(prueba).width > maxW && linea) { lineas.push(linea); linea = palabra; }
+    else linea = prueba;
+  }
+  if (linea) lineas.push(linea);
+  return lineas;
+}
+
+// Escribe un texto dentro de una caja, bajando el tamaño de letra hasta que quepa
+function textoEnCaja(ctx, texto, x, y, w, h, o) {
+  const { max = 48, min = 20, peso = 500, color = '#e9f3f1', align = 'left', centrarV = true } = o || {};
+  let px = max, lineas;
+  while (true) {
+    ctx.font = peso + ' ' + px + 'px ' + FUENTE_TXT;
+    lineas = lineasDe(ctx, texto, w);
+    if (lineas.length * px * 1.28 <= h || px <= min) break;
+    px -= 2;
+  }
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = align;
+  const total = lineas.length * px * 1.28;
+  let yy = centrarV ? y + Math.max(0, (h - total) / 2) : y;
+  const xx = align === 'center' ? x + w / 2 : x;
+  for (const l of lineas) { ctx.fillText(l, xx, yy + px * 0.1); yy += px * 1.28; }
+}
+
+// Tarjeta con marco dorado, fondo oscuro y una lámina donde se dibuja texto. pintar(fn) la redibuja; colorear cambia fondo y borde.
+function crearTarjeta(ancho, alto, radio, resolucion = 1024) {
+  const borde = 0.011;
+  const grupo = new THREE.Group();
+  const matOro = new THREE.MeshStandardMaterial({ color: VIDEO.colorMarco, roughness: 0.4, metalness: 0.35 });
+  const matFondo = new THREE.MeshStandardMaterial({ color: VIDEO.colorFondo, roughness: 0.6, metalness: 0.2 });
+  const oro = new THREE.Mesh(new THREE.ExtrudeGeometry(rectRedondo(ancho, alto, radio), { depth: 0.016, bevelEnabled: false }), matOro);
+  oro.position.z = -0.01;
+  const fondo = new THREE.Mesh(new THREE.ExtrudeGeometry(rectRedondo(ancho - 2 * borde, alto - 2 * borde, Math.max(radio - borde, 0.005)), { depth: 0.018, bevelEnabled: false }), matFondo);
+  fondo.position.z = -0.008;
+  const aw = ancho - 0.03, ah = alto - 0.03;
+  const W = resolucion, H = Math.round(W * ah / aw);
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const lamina = new THREE.Mesh(new THREE.PlaneGeometry(aw, ah), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+  lamina.position.z = 0.013;
+  grupo.add(oro, fondo, lamina);
+  let ultimo = null;
+  const pintar = (fn) => { ultimo = fn; ctx.clearRect(0, 0, W, H); if (fn) fn(ctx, W, H); tex.needsUpdate = true; };
+  const colorear = (fondoHex, oroHex) => { matFondo.color.setHex(fondoHex); matOro.color.setHex(oroHex); };
+  if (document.fonts && document.fonts.load) {
+    Promise.all([document.fonts.load('500 40px Manrope'), document.fonts.load('700 40px Manrope'), document.fonts.load('800 40px Manrope')])
+      .then(() => { if (ultimo) pintar(ultimo); }).catch(() => {});
+  }
+  return { grupo, pintar, colorear };
+}
+
+// Prueba de conocimiento: una pregunta con 4 opciones (botones 3D). Al responder, la correcta se pone en verde y, si fallaste,
+// la tuya en rojo; aparece la retroalimentación y el componente 3D relacionado. Abajo: Regresar y Avanzar (o Finalizar en la última).
+function armarPrueba(modelos, modeloRegresar, modeloAvanzar, modeloFinalizar) {
+  const P = PRUEBA, N = PREGUNTAS.length;
+  const ORO = '#fac31a', CLARO = '#e9f3f1', LETRAS = ['A', 'B', 'C', 'D'];
+  const contenido = new THREE.Group();
+  const botones = [];
+  let indice = 0, aciertos = 0, respondida = false;
+
+  // Pregunta
+  const tPreg = crearTarjeta(P.ancho, P.altoPregunta, 0.04);
+  tPreg.grupo.position.y = -P.altoPregunta / 2;
+  contenido.add(tPreg.grupo);
+
+  // Las 4 opciones (se tocan)
+  const opciones = [];
+  for (let i = 0; i < 4; i++) {
+    const t = crearTarjeta(P.ancho, P.altoOpcion, 0.035);
+    t.grupo.position.y = -(P.altoPregunta + P.hueco + i * (P.altoOpcion + P.espacioOpcion) + P.altoOpcion / 2);
+    t.grupo.userData.sinLatido = true;
+    t.grupo.userData.alTocar = () => responder(i);
+    contenido.add(t.grupo);
+    opciones.push(t);
+    botones.push(t.grupo);
+  }
+
+  // Fila de la retroalimentación: a la izquierda el componente, a la derecha el texto
+  const yFila = P.altoPregunta + P.hueco + 4 * P.altoOpcion + 3 * P.espacioOpcion + P.hueco;
+  const anchoRetro = P.ancho - P.anchoComp - P.gapRetro;
+  const tComp = crearTarjeta(P.anchoComp, P.altoRetro, 0.035);
+  const tRetro = crearTarjeta(anchoRetro, P.altoRetro, 0.035);
+  tComp.grupo.position.set(-P.ancho / 2 + P.anchoComp / 2, -(yFila + P.altoRetro / 2), 0);
+  tRetro.grupo.position.set(P.ancho / 2 - anchoRetro / 2, -(yFila + P.altoRetro / 2), 0);
+  contenido.add(tComp.grupo, tRetro.grupo);
+
+  // Componentes 3D (solo se ve el de la pregunta, después de responder)
+  const girador = new THREE.Group();
+  girador.position.set(tComp.grupo.position.x, tComp.grupo.position.y + 0.025, P.z);
+  const piezas = {};
+  for (const c of COMPONENTES) {
+    const g = prepararPieza(modelos[c.clave], P.tamComp * (c.zoom || 1), c.inclinar);
+    g.visible = false;
+    girador.add(g);
+    piezas[c.clave] = g;
+  }
+  contenido.add(girador);
+
+  // Botones de abajo
+  const gReg = hacerBoton(modeloRegresar, P.btn, 'contenido');
+  const gAv = hacerBoton(modeloAvanzar, P.btn, () => siguiente());
+  const gFin = hacerBoton(modeloFinalizar, P.btn, () => terminar());
+  const altoBtn = Math.max(gReg.userData.alto, gAv.userData.alto, gFin.userData.alto);
+  const yBtnTop = yFila + P.altoRetro + P.hueco;
+  const yBtn = -(yBtnTop + altoBtn / 2);
+  const dx = P.btn / 2 + P.gapBtn / 2;
+  gReg.position.set(-dx, yBtn, 0);
+  gAv.position.set(dx, yBtn, 0);
+  gFin.position.set(dx, yBtn, 0);
+  contenido.add(gReg, gAv, gFin);
+  botones.push(gReg, gAv, gFin);
+
+  const total = yBtnTop + altoBtn;
+  contenido.position.y = total / 2;                        // centra todo el conjunto
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+  ESCENAS.prueba.encuadre.alto = total * 1.3;
+  ESCENAS.prueba.encuadre.ancho = P.ancho * 1.15;
+  ESCENAS.prueba.encuadre.anchoH = P.ancho * 1.15;
+
+  // ---- Dibujo de cada parte ----
+  function pintarPregunta() {
+    const q = PREGUNTAS[indice];
+    tPreg.colorear(VIDEO.colorFondo, VIDEO.colorMarco);
+    tPreg.pintar((ctx, w, h) => {
+      const pad = 50;
+      textoEnCaja(ctx, 'PRUEBA DE CONOCIMIENTO  ·  Pregunta ' + (indice + 1) + ' de ' + N, pad, h * 0.06, w - 2 * pad, h * 0.13, { max: 38, min: 20, peso: 800, color: ORO, centrarV: false });
+      ctx.fillStyle = 'rgba(250, 195, 26, 0.25)';
+      ctx.fillRect(pad, h * 0.22, w - 2 * pad, h * 0.03);
+      ctx.fillStyle = ORO;
+      ctx.fillRect(pad, h * 0.22, (w - 2 * pad) * (indice + 1) / N, h * 0.03);
+      textoEnCaja(ctx, q.q, pad, h * 0.31, w - 2 * pad, h * 0.63, { max: 66, min: 26, peso: 800, color: CLARO });
+    });
+  }
+
+  // estado: 'normal' | 'ok' (verde) | 'mal' (rojo) | 'apagada' (las demás, ya respondida)
+  function pintarOpcion(i, estado) {
+    const t = opciones[i], q = PREGUNTAS[indice];
+    if (estado === 'ok') t.colorear(P.verde, P.verdeBorde);
+    else if (estado === 'mal') t.colorear(P.rojo, P.rojoBorde);
+    else t.colorear(VIDEO.colorFondo, VIDEO.colorMarco);
+    t.pintar((ctx, w, h) => {
+      if (estado === 'apagada') ctx.globalAlpha = 0.5;
+      const pad = 44, r = h * 0.3, cx = pad + r, cy = h / 2;
+      ctx.fillStyle = (estado === 'ok' || estado === 'mal') ? '#ffffff' : ORO;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = r * 0.3;
+      if (estado === 'ok') {            // palomita
+        ctx.strokeStyle = '#14803a';
+        ctx.beginPath(); ctx.moveTo(cx - r * 0.45, cy + r * 0.02); ctx.lineTo(cx - r * 0.1, cy + r * 0.38); ctx.lineTo(cx + r * 0.5, cy - r * 0.36); ctx.stroke();
+      } else if (estado === 'mal') {    // equis
+        ctx.strokeStyle = '#b3202f';
+        ctx.beginPath(); ctx.moveTo(cx - r * 0.38, cy - r * 0.38); ctx.lineTo(cx + r * 0.38, cy + r * 0.38);
+        ctx.moveTo(cx + r * 0.38, cy - r * 0.38); ctx.lineTo(cx - r * 0.38, cy + r * 0.38); ctx.stroke();
+      } else {
+        ctx.fillStyle = '#3a070c';
+        ctx.font = '800 ' + Math.round(r * 1.15) + 'px ' + FUENTE_TXT;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(LETRAS[i], cx, cy + r * 0.04);
+      }
+      const x0 = cx + r + 34;
+      textoEnCaja(ctx, q.o[i], x0, 0, w - x0 - pad, h, { max: 46, min: 20, peso: 700, color: CLARO });
+    });
+  }
+
+  // estado: 'espera' | 'ok' | 'mal'
+  function pintarRetro(estado) {
+    const q = PREGUNTAS[indice];
+    if (estado === 'ok') tRetro.colorear(0x0f5c2a, P.verdeBorde);
+    else if (estado === 'mal') tRetro.colorear(0x7a1620, P.rojoBorde);
+    else tRetro.colorear(VIDEO.colorFondo, VIDEO.colorMarco);
+    tRetro.pintar((ctx, w, h) => {
+      const pad = 44;
+      if (estado === 'espera') {
+        textoEnCaja(ctx, 'Toca la respuesta que creas correcta.', pad, 0, w - 2 * pad, h, { max: 50, min: 24, peso: 700, color: '#ffd0d0', align: 'center' });
+        return;
+      }
+      textoEnCaja(ctx, estado === 'ok' ? 'Respuesta correcta' : 'Respuesta incorrecta', pad, h * 0.06, w - 2 * pad, h * 0.13,
+        { max: 46, min: 24, peso: 800, color: estado === 'ok' ? '#9dffbf' : '#ffb3b3', centrarV: false });
+      textoEnCaja(ctx, estado === 'ok' ? q.ok : q.mal, pad, h * 0.21, w - 2 * pad, h * 0.74, { max: 44, min: 18, peso: 500, color: CLARO });
+    });
+  }
+
+  function pintarComp(mostrando) {
+    const q = PREGUNTAS[indice];
+    tComp.pintar((ctx, w, h) => {
+      if (!mostrando) {
+        ctx.fillStyle = ORO;
+        ctx.font = '800 ' + Math.round(h * 0.45) + 'px ' + FUENTE_TXT;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('?', w / 2, h / 2);
+      } else {
+        const nombre = COMPONENTES.find((c) => c.clave === q.comp).nombre;
+        textoEnCaja(ctx, nombre, 20, h * 0.84, w - 40, h * 0.11, { max: 48, min: 20, peso: 800, color: CLARO, align: 'center' });
+      }
+    });
+  }
+
+  // ---- Flujo ----
+  function cargarPregunta() {
+    respondida = false;
+    pintarPregunta();
+    for (let i = 0; i < 4; i++) pintarOpcion(i, 'normal');
+    pintarRetro('espera');
+    pintarComp(false);
+    for (const k in piezas) piezas[k].visible = false;
+    gAv.visible = false;
+    gFin.visible = false;
+  }
+
+  function responder(i) {
+    if (respondida) return;
+    respondida = true;
+    const q = PREGUNTAS[indice];
+    const acierto = i === q.c;
+    if (acierto) aciertos++;
+    for (let k = 0; k < 4; k++) pintarOpcion(k, k === q.c ? 'ok' : (k === i ? 'mal' : 'apagada'));
+    pintarRetro(acierto ? 'ok' : 'mal');
+    pintarComp(true);
+    piezas[q.comp].visible = true;
+    if (indice < N - 1) gAv.visible = true; else gFin.visible = true;
+  }
+
+  function siguiente() {
+    if (!respondida || indice >= N - 1) return;
+    indice++;
+    cargarPregunta();
+  }
+
+  function terminar(n = 0) {
+    if (!respondida) return;
+    if (!mundo.resultado) { if (n < 25) setTimeout(() => terminar(n + 1), 400); return; }   // el trofeo aún está bajando
+    mundo.resultado.mostrar(aciertos, N);
+    irA('resultado');
+  }
+
+  const reiniciar = () => { indice = 0; aciertos = 0; cargarPregunta(); };
+  const alAnimar = () => { girador.rotation.y = performance.now() / 1000 * P.vel; };
+  reiniciar();
+  return { soporte, botones, reiniciar, alAnimar };
+}
+
+// Resultado: el trofeo gira en una tarjeta, con componentes dando vueltas a su alrededor; la nota y un mensaje positivo.
+function armarResultado(modeloTrofeo, modelosOrbita, modeloRegresar, modeloFinalizar) {
+  const R = RESULTADO;
+  const ORO = '#fac31a', CLARO = '#e9f3f1';
+  const contenido = new THREE.Group();
+
+  const tarjeta = crearTarjeta(R.ancho, R.alto, 0.05);
+  tarjeta.grupo.position.y = -R.alto / 2;
+  contenido.add(tarjeta.grupo);
+
+  // Centro del trofeo: a 35 % de la altura de la tarjeta, contando desde arriba
+  const yCentro = -R.alto / 2 + 0.145 * (R.alto - 0.03);
+  const centro = new THREE.Group();
+  centro.position.set(0, yCentro, R.z);
+  contenido.add(centro);
+  const trofeo = new THREE.Group();
+  trofeo.add(prepararPieza(modeloTrofeo, R.tamTrofeo, 0));
+  centro.add(trofeo);
+
+  // Componentes que rodean el trofeo, a la altura de su base
+  const orbitas = modelosOrbita.map((m) => {
+    const g = new THREE.Group();
+    g.add(prepararPieza(m.modelo, R.tamOrbita * (m.zoom || 1), m.inclinar));
+    centro.add(g);
+    return g;
+  });
+
+  // Botones de abajo
+  const gReg = hacerBoton(modeloRegresar, R.btn, 'contenido');
+  const gPor = hacerBoton(modeloFinalizar, R.btn, 'menu');   // Finalizar: vuelve al menú (Video / Contenido / Portada)
+  const altoBtn = Math.max(gReg.userData.alto, gPor.userData.alto);
+  const yBtn = -(R.alto + R.hueco + altoBtn / 2);
+  const dx = R.btn / 2 + R.gapBtn / 2;
+  gReg.position.set(-dx, yBtn, 0);
+  gPor.position.set(dx, yBtn, 0);
+  contenido.add(gReg, gPor);
+
+  const total = R.alto + R.hueco + altoBtn;
+  contenido.position.y = total / 2;
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+  ESCENAS.resultado.encuadre.alto = total * 1.25;
+  ESCENAS.resultado.encuadre.ancho = R.ancho * 1.15;
+  ESCENAS.resultado.encuadre.anchoH = R.ancho * 1.15;
+
+  const mostrar = (aciertos, total) => {
+    const nota = aciertos;
+    const mensaje = MENSAJES.find((m) => nota >= m.desde).texto;
+    tarjeta.pintar((ctx, w, h) => {
+      const pad = 60;
+      textoEnCaja(ctx, '¡Prueba terminada!', pad, h * 0.03, w - 2 * pad, h * 0.09, { max: 84, min: 40, peso: 800, color: ORO, align: 'center' });
+      textoEnCaja(ctx, 'Tu nota', pad, h * 0.595, w - 2 * pad, h * 0.05, { max: 50, min: 30, peso: 700, color: '#ffd0d0', align: 'center' });
+      textoEnCaja(ctx, nota + ' / ' + total, pad, h * 0.645, w - 2 * pad, h * 0.145, { max: 170, min: 80, peso: 800, color: ORO, align: 'center' });
+      textoEnCaja(ctx, aciertos + (aciertos === 1 ? ' respuesta correcta' : ' respuestas correctas') + ' de ' + total, pad, h * 0.79, w - 2 * pad, h * 0.045, { max: 42, min: 24, peso: 500, color: CLARO, align: 'center' });
+      textoEnCaja(ctx, mensaje, pad, h * 0.845, w - 2 * pad, h * 0.13, { max: 56, min: 26, peso: 700, color: CLARO, align: 'center' });
+    });
+  };
+  mostrar(0, PREGUNTAS.length);
+
+  const alAnimar = () => {
+    const t = performance.now() / 1000;
+    trofeo.rotation.y = t * 0.8;
+    orbitas.forEach((g, i) => {
+      const a = t * 0.6 + i * 2 * Math.PI / orbitas.length;
+      g.position.set(Math.cos(a) * R.radioOrbita, -0.15 + Math.sin(t * 1.3 + i) * 0.02, Math.sin(a) * 0.17);
+      g.rotation.y = t * 1.2 + i;
+    });
+  };
+  return { soporte, botones: [gReg, gPor], mostrar, alAnimar };
+}
+
+// Empieza la prueba desde la pregunta 1
+function iniciarPrueba(n = 0) {
+  if (!mundo.prueba) { mostrarAviso('Cargando…'); if (n < 25) setTimeout(() => iniciarPrueba(n + 1), 400); return; }
+  ocultarAviso();
+  mundo.prueba.reiniciar();
+  irA('prueba');
+}
+
+// ---------- Botón 3D con texto (estilo de los demás: marco plateado, cara roja, letra blanca en cursiva) ----------
+const cacheBoton = {};
+let matsBoton = null;
+function crearBotonTexto(texto, ancho, alto, destino) {
+  if (!matsBoton) {
+    matsBoton = {
+      plata: new THREE.MeshStandardMaterial({ color: 0xdfe5ea, roughness: 0.25, metalness: 0.9 }),
+      borde: new THREE.MeshStandardMaterial({ color: BOTON_INFO.borde, roughness: 0.5, metalness: 0.3 }),
+      cara: new THREE.MeshStandardMaterial({ color: BOTON_INFO.cara, roughness: 0.35, metalness: 0.25 })
+    };
+  }
+  const clave = ancho + 'x' + alto;
+  if (!cacheBoton[clave]) {
+    const r = alto * 0.3, a = alto * 0.09, b = alto * 0.07, bis = 0.006;
+    const ext = (w, h, rr, depth, bisel) => new THREE.ExtrudeGeometry(rectRedondo(w, h, rr),
+      bisel ? { depth, bevelEnabled: true, bevelThickness: bis, bevelSize: bis, bevelSegments: 2, curveSegments: 10 } : { depth, bevelEnabled: false, curveSegments: 10 });
+    cacheBoton[clave] = {
+      plata: ext(ancho - 2 * bis, alto - 2 * bis, r, 0.03, true),
+      borde: ext(ancho - 2 * a, alto - 2 * a, r * 0.8, 0.012, false),
+      cara: ext(ancho - 2 * (a + b), alto - 2 * (a + b), r * 0.6, 0.012, false),
+      aw: ancho - 2 * (a + b) - 0.01, ah: alto - 2 * (a + b) - 0.01
+    };
+  }
+  const geo = cacheBoton[clave];
+  const g = new THREE.Group();
+  const plata = new THREE.Mesh(geo.plata, matsBoton.plata); plata.position.z = -0.015;
+  const borde = new THREE.Mesh(geo.borde, matsBoton.borde); borde.position.z = 0.019;
+  const cara = new THREE.Mesh(geo.cara, matsBoton.cara); cara.position.z = 0.029;
+
+  const W = 1024, H = Math.round(W * geo.ah / geo.aw);
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const T = texto.toUpperCase();
+  const pintar = () => {
+    ctx.clearRect(0, 0, W, H);
+    let px = Math.round(H * 0.62);
+    const fuente = (p) => 'italic 800 ' + p + 'px ' + FUENTE_TXT;
+    ctx.font = fuente(px);
+    while (ctx.measureText(T).width > W * 0.9 && px > 14) { px -= 2; ctx.font = fuente(px); }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    ctx.lineWidth = px * 0.16; ctx.strokeStyle = '#5a0006';
+    ctx.strokeText(T, W / 2, H / 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(T, W / 2, H / 2);
+    tex.needsUpdate = true;
+  };
+  pintar();
+  if (document.fonts && document.fonts.load) document.fonts.load('800 40px Manrope').then(pintar).catch(() => {});
+  const etiqueta = new THREE.Mesh(new THREE.PlaneGeometry(geo.aw, geo.ah), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+  etiqueta.position.z = 0.0425;
+  g.add(plata, borde, cara, etiqueta);
+
+  g.userData.escalaBase = 1;
+  g.userData.alto = alto;
+  g.userData.alTocar = () => {
+    presion = { boton: g, t0: performance.now() };
+    if (destino) setTimeout(() => (typeof destino === 'function' ? destino() : irA(destino)), 220);
+  };
+  return g;
+}
+
+// Información: los tres botones (Objetivo, Destreza, Indicador) en columna, y abajo Regresar a la portada
+function armarInfo(modeloRegresar) {
+  const B = BOTON_INFO;
+  const contenido = new THREE.Group();
+  const botones = [];
+  let y = 0;
+  for (const { texto, ficha } of BOTONES_INFO) {
+    const g = crearBotonTexto(texto, B.ancho, B.alto, () => abrirFicha(ficha));
+    g.position.set(0, -(y + B.alto / 2), 0);
+    y += B.alto + B.espacio;
+    contenido.add(g);
+    botones.push(g);
+  }
+  const gReg = hacerBoton(modeloRegresar, B.btnReg, 'portada');
+  y += B.hueco - B.espacio;
+  gReg.position.set(0, -(y + gReg.userData.alto / 2), 0);
+  contenido.add(gReg);
+  botones.push(gReg);
+  const total = y + gReg.userData.alto;
+  contenido.position.y = total / 2;
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+  ESCENAS.info.encuadre.alto = total * 1.3;
+  ESCENAS.info.encuadre.ancho = B.ancho * 1.3;
+  ESCENAS.info.encuadre.anchoH = B.ancho * 1.3;
+  return { soporte, botones };
+}
+
+// Texto de cada ficha: el tamaño de letra baja solo hasta que todo quepa
+function pintarFicha(ctx, w, h, ficha) {
+  const ORO = '#fac31a', CLARO = '#e9f3f1', pad = 64;
+  const disponer = (px) => {
+    const ops = [];
+    let y = pad;
+    const bloque = (cad, size, peso, color) => {
+      ctx.font = peso + ' ' + size + 'px ' + FUENTE_TXT;
+      for (const l of lineasDe(ctx, cad, w - 2 * pad)) { ops.push({ txt: l, y, size, peso, color }); y += size * 1.3; }
+    };
+    bloque(ficha.titulo, px * 1.35, 800, ORO);
+    y += px * 0.25; ops.push({ linea: y }); y += px * 0.45;
+    ficha.secciones.forEach((sec, i) => {
+      if (i) y += px * 0.55;
+      bloque(sec.etiqueta, px * 0.9, 800, ORO);
+      y += px * 0.12;
+      bloque(sec.texto, px, 500, CLARO);
+    });
+    return { ops, fin: y };
+  };
+  let plan;
+  for (let px = 56; px >= 22; px -= 2) { plan = disponer(px); if (plan.fin + pad <= h) break; }
+  const dy = Math.max(0, (h - pad - plan.fin) / 2);
+  ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  for (const o of plan.ops) {
+    if (o.linea !== undefined) {
+      ctx.strokeStyle = 'rgba(250, 195, 26, 0.6)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(pad, o.linea + dy); ctx.lineTo(w - pad, o.linea + dy); ctx.stroke();
+    } else {
+      ctx.font = o.peso + ' ' + o.size + 'px ' + FUENTE_TXT;
+      ctx.fillStyle = o.color;
+      ctx.fillText(o.txt, pad, o.y + dy);
+    }
+  }
+}
+
+// Panel con el texto de la ficha elegida + Regresar (vuelve a los tres botones)
+function armarInfoTexto(modeloRegresar) {
+  const F = FICHA;
+  const contenido = new THREE.Group();
+  const tarjeta = crearTarjeta(F.ancho, F.alto, 0.05);
+  tarjeta.grupo.position.y = -F.alto / 2;
+  contenido.add(tarjeta.grupo);
+  const gReg = hacerBoton(modeloRegresar, F.btn, 'info');
+  gReg.position.set(0, -(F.alto + F.hueco + gReg.userData.alto / 2), 0);
+  contenido.add(gReg);
+  const total = F.alto + F.hueco + gReg.userData.alto;
+  contenido.position.y = total / 2;
+  const soporte = new THREE.Group();
+  soporte.add(contenido);
+  soporte.userData.escala = 1;
+  ESCENAS.infoTexto.encuadre.alto = total * 1.25;
+  ESCENAS.infoTexto.encuadre.ancho = F.ancho * 1.2;
+  ESCENAS.infoTexto.encuadre.anchoH = F.ancho * 1.2;
+  const mostrar = (clave) => tarjeta.pintar((ctx, w, h) => pintarFicha(ctx, w, h, FICHAS[clave]));
+  return { soporte, botones: [gReg], mostrar };
+}
+
+function abrirFicha(clave, n = 0) {
+  if (!mundo.infoTexto) { if (n < 25) setTimeout(() => abrirFicha(clave, n + 1), 300); return; }
+  mundo.infoTexto.mostrar(clave);
+  irA('infoTexto');
+}
+
+function abrirDetalle(clave, n = 0) {
+  if (!mundo.detalle) { mostrarAviso('Cargando…'); if (n < 25) setTimeout(() => abrirDetalle(clave, n + 1), 400); return; }
+  ocultarAviso();
+  mundo.detalle.mostrar(clave);
+  irA('detalle');
+}
+
+// Cambia de escena sin salir de AR. Si la escena aún se está armando, espera y entra apenas esté lista.
+function irA(nombre) {
+  if (nombre === escenaActual) return;
+  if (!mundo[nombre]) {
+    if (!ESCENA_REQ[nombre]) return;
+    destinoPendiente = nombre;
+    mostrarAviso('Cargando…');
+    return;
+  }
+  destinoPendiente = null;
+  if (mundo[escenaActual]) {
+    if (mundo[escenaActual].pausar) mundo[escenaActual].pausar();   // al salir del video, se pausa
+    mundo[escenaActual].soporte.visible = false;
+  }
+  escenaActual = nombre;
+  mundo[nombre].soporte.visible = true;
+  if (mundo[nombre].alEntrar) mundo[nombre].alEntrar();
+  presion = null;
+  pivot.quaternion.copy(vistaInicial());
+  tAparicion = performance.now();                          // vuelve a hacer el rebote de aparición
+  if (modo === 'visor') { calcularDistanciaVisor(); zoomVisor = 1; }
+  else rig.scale.setScalar(tamanoAR());
+}
+
+// ===================== CARGA POR ETAPAS =====================
+// Antes se bajaban los 17 modelos a la vez y no se veía nada hasta el último. Ahora:
+//  1) baja la portada y aparece enseguida (ya se puede tocar el botón de AR);
+//  2) mientras miras la portada bajan los botones, y luego los componentes y el trofeo;
+//  3) cada escena se arma sola, de a una, apenas tiene sus modelos (sin trabar la pantalla).
+const modelos = {};                                         // clave -> glb cargado (plantilla, nunca se usa directo)
+const modelo = (clave) => modelos[clave].scene.clone(true); // cada uso recibe su propia copia
+const COMPS = COMPONENTES.map((c) => 'comp_' + c.clave);
+const TANDAS = [
+  ['mural', 'insignia', 'empezar'],
+  ['btnVideo', 'btnContenido', 'btnPortada', 'btnRegresar', 'btnAvanzar', 'btnFinalizar'],
+  [...COMPS, 'trofeo']
+];
+// Qué modelos necesita cada escena (el orden es el orden en que se arman)
+const ESCENA_REQ = {
+  portada:   ['mural', 'insignia', 'empezar'],
+  menu:      ['btnVideo', 'btnContenido', 'btnPortada'],
+  video:     ['btnRegresar'],
+  info:      ['btnRegresar'],
+  infoTexto: ['btnRegresar'],
+  contenido: ['btnRegresar', 'btnAvanzar', ...COMPS],
+  detalle:   ['btnRegresar', ...COMPS],
+  prueba:    ['btnRegresar', 'btnAvanzar', 'btnFinalizar', ...COMPS],
+  resultado: ['btnRegresar', 'btnFinalizar', 'trofeo', ...COMPS]
+};
+const piezasComp = () => COMPONENTES.map((c) => ({
+  clave: c.clave, nombre: c.nombre, inclinar: c.inclinar, zoom: c.zoom, info: c, modelo: modelo('comp_' + c.clave)
+}));
+const CONSTRUCTORES = {
+  portada:   () => armarPortada(modelo('mural'), modelo('insignia'), modelo('empezar')),
+  menu:      () => armarMenu([
+    { modelo: modelo('btnVideo'),     destino: 'video' },      // 1.º arriba: Video
+    { modelo: modelo('btnContenido'), destino: 'contenido' },  // 2.º en medio: Contenido
+    { modelo: modelo('btnPortada'),   destino: 'portada' }     // 3.º abajo: Portada
+  ]),
+  video:     () => armarVideo(modelo('btnRegresar')),
+  info:      () => armarInfo(modelo('btnRegresar')),
+  infoTexto: () => armarInfoTexto(modelo('btnRegresar')),
+  contenido: () => armarContenido(piezasComp(), modelo('btnRegresar'), modelo('btnAvanzar')),
+  detalle:   () => armarDetalle(piezasComp(), modelo('btnRegresar')),
+  prueba:    () => armarPrueba(Object.fromEntries(COMPONENTES.map((c) => [c.clave, modelo('comp_' + c.clave)])), modelo('btnRegresar'), modelo('btnAvanzar'), modelo('btnFinalizar')),
+  resultado: () => armarResultado(modelo('trofeo'),
+    ['arduino', 'led', 'sensor', 'servo', 'resistencia', 'protoboard'].map((k) => {
+      const c = COMPONENTES.find((x) => x.clave === k);
+      return { modelo: modelo('comp_' + k), inclinar: c.inclinar, zoom: c.zoom };
+    }), modelo('btnRegresar'), modelo('btnFinalizar'))
+};
+
+let destinoPendiente = null, construyendo = false;
+const fallidas = new Set();
+const siguienteTarea = (fn) => setTimeout(fn, 50);   // deja respirar al navegador entre escena y escena
+
+// Arma, de a una por vez, las escenas cuyos modelos ya llegaron
+function programarConstruccion() {
+  if (construyendo) return;
+  construyendo = true;
+  const paso = async () => {
+    await dedoLibre();
+    const nombre = Object.keys(ESCENA_REQ).find((n) => !mundo[n] && !fallidas.has(n) && ESCENA_REQ[n].every((k) => modelos[k]));
+    if (!nombre) { construyendo = false; return; }
+    try {
+      const e = CONSTRUCTORES[nombre]();
+      e.soporte.visible = false;
+      pivot.add(e.soporte);
+      if (nombre === 'portada') {
+        // La portada se muestra ya "caliente": texturas subidas y shaders compilados, así el primer cuadro no se traba
+        await calentar(e.soporte);
+        e.soporte.visible = true;
+        try { await renderer.compileAsync(scene, camera); } catch (err) { /* se compila al dibujar */ }
+        mundo[nombre] = e;
+        portadaLista();
+      } else {
+        mundo[nombre] = e;
+        e.soporte.visible = nombre === escenaActual;
+        encolarCalentar(e.soporte);        // las texturas suben poco a poco, en segundo plano
+        if (destinoPendiente === nombre) { ocultarAviso(); irA(nombre); }
+      }
+    } catch (err) {
+      fallidas.add(nombre);
+      console.error('No se pudo armar la escena ' + nombre, err);
+    }
+    siguienteTarea(paso);
+  };
+  paso();
+}
+
+// La portada ya se ve: se activan los botones de AR
+function portadaLista() {
+  pivot.quaternion.copy(vistaInicial());
+  tAparicion = performance.now();
+  btnAR.disabled = false;
+  ocultarAviso();
+  inicioBtn.disabled = false;
+  inicioBtn.textContent = 'Ver en realidad aumentada';
+  inicioMsg.textContent = '';
+  const iPhone = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+  if (soloAR && !iPhone) iniciarAR();     // en iPhone hace falta un toque para el permiso de movimiento
+}
+
+async function cargarTandas() {
+  await cederPaso();     // deja que el módulo termine de arrancar y pinte la pantalla de inicio
+  // Primero llega la portada (ya venía bajando desde el <head>); recién después se piden los demás archivos
+  await Promise.all(TANDAS[0].map((k) => bajar(MODELOS[k]).catch(() => {})));
+  TANDAS.slice(1).flat().forEach((k) => bajar(MODELOS[k]).catch(() => {}));      // solo red, no gasta CPU
+  for (const tanda of TANDAS) {
+    for (const clave of tanda) {                                                  // de a un modelo por turno
+      await dedoLibre();
+      try {
+        const g = await cargar(MODELOS[clave]);
+        await cederPaso();
+        await prepararModelo(g);
+        modelos[clave] = g;
+      } catch (err) {
+        console.error('Modelo con problema: ' + MODELOS[clave], err);
+        mostrarAviso('No se pudo cargar ' + MODELOS[clave] + '. Revisa el nombre y la carpeta (cuidado con las mayúsculas).', true, 9000);
+      }
+    }
+    programarConstruccion();
+  }
+}
+mostrarAviso('Cargando…');
+cargarTandas();
+
+// ===================== BOTONES 3D =====================
+const rayo = new THREE.Raycaster();
+const punto = new THREE.Vector2();
+
+function botonBajoElDedo(x, y) {
+  const m = mundo[escenaActual];
+  if (!m || !rig.visible) return null;
+  punto.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+  camera.updateMatrixWorld(true);
+  rayo.setFromCamera(punto, camera);
+  const golpes = rayo.intersectObjects(m.botones, true).filter((g) => {   // ignora lo que está oculto
+    for (let o = g.object; o; o = o.parent) if (!o.visible) return false;
+    return true;
+  });
+  if (!golpes.length) return null;
+  let o = golpes[0].object;
+  while (o && !o.userData.alTocar) o = o.parent;
+  return o || null;
+}
+
+// Un toque corto: si cae sobre un botón 3D lo pulsa; si no, coloca la escena frente a ti
+function tocar(x, y) {
+  const boton = botonBajoElDedo(x, y);
+  if (boton) boton.userData.alTocar();
+  else recolocar();
+}
+
+// ===================== GIRO Y ZOOM CON EL DEDO =====================
+const punteros = new Map();
+let distPrevia = 0, angPrevio = 0, toque = null;
+const eje = new THREE.Vector3(), giro = new THREE.Quaternion(), inversa = new THREE.Quaternion();
+const ejeZ = new THREE.Vector3(0, 0, 1);
+
+const dedos = () => [...punteros.values()];
+const distanciaDedos = () => { const [a, b] = dedos(); return Math.hypot(a.x - b.x, a.y - b.y); };
+const anguloDedos = () => { const [a, b] = dedos(); return Math.atan2(b.y - a.y, b.x - a.x); };
+
+// Qué se gira con el dedo: en el detalle solo el componente; en las demás escenas, toda la escena
+function girable() { return escenaActual === 'detalle' && mundo.detalle ? mundo.detalle.girable : pivot; }
+
+// Giro con dos dedos (sobre el eje de la pantalla)
+function torcer(da) {
+  pivot.parent.getWorldQuaternion(inversa).invert();
+  eje.copy(ejeZ).applyQuaternion(camera.quaternion).applyQuaternion(inversa).normalize();
+  giro.setFromAxisAngle(eje, -da);
+  girable().quaternion.premultiply(giro);
+}
+
+function rotar(dx, dy) {
+  rig.getWorldQuaternion(inversa).invert();
+  const k = 0.008;
+  eje.set(0, 1, 0).applyQuaternion(camera.quaternion).applyQuaternion(inversa).normalize();
+  giro.setFromAxisAngle(eje, dx * k);
+  girable().quaternion.premultiply(giro);
+  eje.set(1, 0, 0).applyQuaternion(camera.quaternion).applyQuaternion(inversa).normalize();
+  giro.setFromAxisAngle(eje, dy * k);
+  girable().quaternion.premultiply(giro);
+}
+
+function acercar(razon) {
+  if (modo === 'visor') {
+    zoomVisor = THREE.MathUtils.clamp(zoomVisor / razon, 0.35, 4);
+  } else {
+    arEscala = THREE.MathUtils.clamp(arEscala * razon, 0.25, 6);
+    rig.scale.setScalar(tamanoAR());
+  }
+}
+
+gestos.addEventListener('pointerdown', (e) => {
+  gestos.setPointerCapture(e.pointerId);
+  punteros.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (punteros.size === 1) toque = { x: e.clientX, y: e.clientY, t: performance.now(), valido: true };
+  else if (toque) toque.valido = false;
+  if (punteros.size === 2) { distPrevia = distanciaDedos(); angPrevio = anguloDedos(); }
+});
+
+gestos.addEventListener('pointermove', (e) => {
+  const p = punteros.get(e.pointerId);
+  if (!p) return;
+  if (toque && toque.valido && Math.hypot(e.clientX - toque.x, e.clientY - toque.y) > 12) toque.valido = false;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  p.x = e.clientX; p.y = e.clientY;
+
+  if (punteros.size === 1) {
+    rotar(dx, dy);
+  } else if (punteros.size === 2) {
+    const nueva = distanciaDedos();
+    if (distPrevia > 0) acercar(nueva / distPrevia);
+    distPrevia = nueva;
+    const ang = anguloDedos();
+    let da = ang - angPrevio;
+    if (da > Math.PI) da -= 2 * Math.PI;
+    else if (da < -Math.PI) da += 2 * Math.PI;
+    angPrevio = ang;
+    if (da !== 0 && nueva > 30) torcer(da);
+  }
+});
+
+const soltar = (e) => {
+  const eraUno = punteros.size === 1;
+  punteros.delete(e.pointerId);
+  if (punteros.size === 2) { distPrevia = distanciaDedos(); angPrevio = anguloDedos(); }
+  if (e.type === 'pointerup' && eraUno && toque && toque.valido && performance.now() - toque.t < 400) tocar(e.clientX, e.clientY);
+  if (punteros.size === 0) toque = null;
+};
+gestos.addEventListener('pointerup', soltar);
+gestos.addEventListener('pointercancel', soltar);
+gestos.addEventListener('wheel', (e) => { e.preventDefault(); acercar(e.deltaY < 0 ? 1.08 : 0.92); }, { passive: false });
+
+// ===================== PONER LA ESCENA FRENTE A LA CÁMARA =====================
+const adelante = new THREE.Vector3();
+const eulerFrente = new THREE.Euler(0, 0, 0, 'YXZ');
+const qSeg = new THREE.Quaternion();
+const objPos = new THREE.Vector3();
+const CERO = new THREE.Vector3();
+
+// La escena queda derecha (sin ladearse) mirando hacia ti
+function mirarDeFrente(destino, dir) {
+  if (Math.hypot(dir.x, dir.z) < 0.2) return false;
+  const cabeceo = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)), -1.0, 1.0);
+  eulerFrente.set(cabeceo, Math.atan2(-dir.x, -dir.z), 0, 'YXZ');
+  destino.setFromEuler(eulerFrente);
+  return true;
+}
+
+function colocarFrente(posCamara, quatCamara, reiniciarGiro = true) {
+  adelante.set(0, 0, -1).applyQuaternion(quatCamara);
+  rig.position.copy(adelante).multiplyScalar(AR_DISTANCIA).add(posCamara);
+  mirarDeFrente(rig.quaternion, adelante);
+  rig.scale.setScalar(tamanoAR());
+  if (reiniciarGiro || !colocado) pivot.quaternion.copy(vistaInicial());
+  rig.visible = true;
+  colocado = true;
+  mostrarAviso('Listo. La escena te sigue donde mires.', false, 4000);
+}
+
+function recolocar() {
+  if (modo === 'ar') colocarFrente(CERO, camera.quaternion.clone(), false);
+}
+
+// ===================== AR CON CÁMARA + GIROSCOPIO =====================
+const zee = new THREE.Vector3(0, 0, 1);
+const euler = new THREE.Euler();
+const q0 = new THREE.Quaternion();
+const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+
+function anguloPantalla() {
+  if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
+  return window.orientation || 0;
+}
+
+function alOrientar(e) {
+  if (e.alpha === null || e.beta === null || e.gamma === null) return;
+  clearTimeout(timerGiro);
+  const rad = THREE.MathUtils.degToRad;
+  euler.set(rad(e.beta), rad(e.alpha), -rad(e.gamma), 'YXZ');
+  objetivo.setFromEuler(euler);
+  objetivo.multiply(q1);
+  objetivo.multiply(q0.setFromAxisAngle(zee, -rad(anguloPantalla())));
+  if (!colocado) {
+    camera.quaternion.copy(objetivo);
+    colocarFrente(CERO, objetivo);
+  }
+}
+
+function textoError(err) {
+  if (!navigator.mediaDevices) return 'Abre la página con https para poder usar la cámara.';
+  const nombre = err && err.name ? ' (' + err.name + ')' : '';
+  if (err && err.message === 'giro-denegado') return 'Necesito permiso de movimiento para seguir el celular.';
+  if (err && (err.name === 'TimeoutError' || err.name === 'SinImagen')) return 'La cámara tardó demasiado en responder. Vuelve a tocar el botón de AR (si sigue igual, cierra otras apps que la usen).';
+  if (err && err.name === 'NotAllowedError') return 'La cámara está bloqueada. Dale permiso en el candado de la barra de direcciones.';
+  if (err && err.name === 'NotFoundError') return 'No se encontró ninguna cámara.';
+  if (err && (err.name === 'NotReadableError' || err.name === 'AbortError')) return 'La cámara está ocupada por otra app. Cierra las que la usen, recarga la página e intenta otra vez.' + nombre;
+  return 'No se pudo abrir la cámara. Recarga la página e intenta otra vez.' + nombre;
+}
+
+// Pide la cámara con tiempo límite; si responde tarde, la apaga para no dejarla ocupada
+function pedirCamara(pedido, ms) {
+  return new Promise((resolver, rechazar) => {
+    let terminado = false;
+    const reloj = setTimeout(() => {
+      terminado = true;
+      rechazar(Object.assign(new Error('camara-lenta'), { name: 'TimeoutError' }));
+    }, ms);
+    navigator.mediaDevices.getUserMedia(pedido).then((stream) => {
+      clearTimeout(reloj);
+      if (terminado) { stream.getTracks().forEach((t) => t.stop()); return; }
+      terminado = true;
+      resolver(stream);
+    }, (err) => {
+      clearTimeout(reloj);
+      if (terminado) return;
+      terminado = true;
+      rechazar(err);
+    });
+  });
+}
+
+async function abrirCamara() {
+  const intentos = [
+    [{ video: { facingMode: { ideal: 'environment' }, width: { ideal: 960 }, height: { ideal: 540 } }, audio: false }, 6000],
+    [{ video: { facingMode: { ideal: 'environment' } }, audio: false }, 7000],
+    [{ video: true, audio: false }, 7000]
+  ];
+  let ultimo;
+  for (const [pedido, ms] of intentos) {
+    try { return await pedirCamara(pedido, ms); }
+    catch (err) {
+      ultimo = err;
+      if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  throw ultimo;
+}
+
+function detenerCamara() {
+  if (flujo) { flujo.getTracks().forEach((t) => { t.onended = null; t.stop(); }); flujo = null; }
+  video.pause();
+  video.srcObject = null;
+  video.style.display = '';
+}
+
+// Espera hasta que el video de la cámara tenga imagen de verdad
+function esperarImagen(ms) {
+  return new Promise((resolver, rechazar) => {
+    const listo = () => video.readyState >= 2 && video.videoWidth > 0;
+    if (listo()) { resolver(); return; }
+    const t0 = performance.now();
+    const reloj = setInterval(() => {
+      if (video.paused) video.play().catch(() => {});
+      if (listo()) { clearInterval(reloj); resolver(); }
+      else if (performance.now() - t0 > ms) {
+        clearInterval(reloj);
+        rechazar(Object.assign(new Error('camara-sin-imagen'), { name: 'SinImagen' }));
+      }
+    }, 120);
+  });
+}
+
+function alPerderCamara() {
+  if (modo !== 'ar') return;
+  volverAlVisor();
+  mostrarAviso('Se perdió la cámara. Vuelve a tocar el botón de AR.', true, 5000);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && modo === 'ar' && video.srcObject) video.play().catch(() => {});
+});
+// Al salir de la página se libera la cámara; si el navegador la devuelve "congelada" (caché al volver atrás), se recarga limpia
+addEventListener('pagehide', () => { if (modo === 'ar') detenerCamara(); });
+addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+
+async function iniciarAR() {
+  if (modo !== 'visor' || iniciandoAR) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { mostrarAviso(textoError(null), true); return; }
+  iniciandoAR = true;
+  const miIntento = ++intentoAR;
+  btnAR.disabled = true;
+  inicioBtn.disabled = true;
+  inicioBtn.textContent = 'Abriendo cámara…';   // respuesta inmediata al toque
+  mostrarAviso('Abriendo la cámara…');
+  clearTimeout(timerAvisoCam);
+  timerAvisoCam = setTimeout(() => { if (iniciandoAR) mostrarAviso('Sigue abriendo la cámara… un momento, ya casi.'); }, 4000);
+
+  try {
+    // El permiso de movimiento (iPhone) se pide justo dentro del toque, y la cámara se abre a la vez (no una después de otra)
+    const pPermiso = (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')
+      ? DeviceOrientationEvent.requestPermission() : Promise.resolve('granted');
+    const pCam = abrirCamara();
+    pCam.catch(() => {});
+    if ((await pPermiso) !== 'granted') {
+      pCam.then((s) => s.getTracks().forEach((t) => t.stop()), () => {});
+      throw new Error('giro-denegado');
+    }
+    flujo = await pCam;
+    if (miIntento !== intentoAR) { detenerCamara(); return; }
+    flujo.getVideoTracks().forEach((t) => { t.onended = alPerderCamara; });
+    video.muted = true;
+    video.playsInline = true;
+    video.style.display = 'block';
+    video.srcObject = flujo;
+    video.play().catch(() => {});
+    try { await esperarImagen(5000); }
+    catch (e) {
+      video.srcObject = null;
+      video.srcObject = flujo;
+      video.play().catch(() => {});
+      await esperarImagen(5000);
+    }
+  } catch (err) {
+    detenerCamara();
+    mostrarAviso(textoError(err), true);
+    return;
+  } finally {
+    clearTimeout(timerAvisoCam);
+    iniciandoAR = false;
+    btnAR.disabled = false;
+    inicioBtn.disabled = false;
+    inicioBtn.textContent = 'Ver en realidad aumentada';
+  }
+
+  modo = 'ar';
+  document.body.dataset.modo = 'ar';
+  inicioEl.hidden = true;
+  colocado = false;
+  arEscala = 1;
+  camera.fov = AR_FOV;
+  camera.position.set(0, 0, 0);
+  camera.quaternion.identity();
+  camera.updateProjectionMatrix();
+  rig.visible = false;
+  mostrarAviso('Apunta hacia donde quieres la escena…');
+
+  addEventListener('deviceorientation', alOrientar);
+  timerGiro = setTimeout(() => {
+    if (!colocado) {
+      camera.quaternion.identity();
+      objetivo.identity();
+      colocarFrente(CERO, objetivo);
+      mostrarAviso('Este equipo no entrega datos de giroscopio: la escena queda fija en pantalla, pero puedes girarla con el dedo.', true, 6000);
+    }
+  }, 2500);
+}
+
+// ===================== VOLVER AL VISOR 3D =====================
+function volverAlVisor() {
+  clearTimeout(timerGiro);
+  removeEventListener('deviceorientation', alOrientar);
+  detenerCamara();
+  modo = 'visor';
+  document.body.dataset.modo = 'visor';
+  colocado = false;
+  zoomVisor = 1;
+  camera.fov = VISOR_FOV;
+  camera.quaternion.identity();
+  camera.position.set(0, 0, 0);
+  rig.position.set(0, 0, 0);
+  rig.quaternion.identity();
+  rig.scale.setScalar(1);
+  rig.visible = true;
+  pivot.quaternion.copy(vistaInicial());
+  redimensionar();
+  ocultarAviso();
+  if (soloAR) { inicioMsg.textContent = ''; inicioEl.hidden = false; }   // con el QR vuelve a la pantalla del botón de AR
+}
+
+btnAR.addEventListener('click', iniciarAR);
+inicioBtn.addEventListener('click', iniciarAR);
+$('inicio3D').addEventListener('click', () => { inicioEl.hidden = true; });
+$('salir').addEventListener('click', volverAlVisor);
+$('restablecer').addEventListener('click', () => {
+  pivot.quaternion.copy(vistaInicial());
+  if (escenaActual === 'detalle') mundo.detalle.girable.quaternion.identity();
+  zoomVisor = 1;
+});
+
+// ===================== BUCLE DE DIBUJO =====================
+const facil = (t) => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);   // rebote suave
+let tAnterior = performance.now();
+let cuadro = 0;
+
+// En AR la escena acompaña la mirada, suavemente
+function seguirCamara(dt, quatCam) {
+  adelante.set(0, 0, -1).applyQuaternion(quatCam);
+  objPos.copy(adelante).multiplyScalar(AR_DISTANCIA);
+  const k = 1 - Math.exp(-dt * SEGUIR_ESCENA);
+  rig.position.lerp(objPos, k);
+  if (mirarDeFrente(qSeg, adelante)) rig.quaternion.slerp(qSeg, k);
+}
+
+function animarEscena(ahora, dt) {
+  const m = mundo[escenaActual];
+  if (!m) return;
+  if (m.alAnimar) m.alAnimar();
+  // Aparición con rebote
+  const t = Math.min((ahora - tAparicion) / 450, 1);
+  m.soporte.scale.setScalar(m.soporte.userData.escala * Math.max(facil(t), 0.001));
+  // Botones 3D: latido suave (invita a tocar) + hundimiento al pulsarlos
+  for (const b of m.botones) {
+    if (b.userData.girar) b.userData.girar(ahora);         // componentes girando
+    if (b.userData.sinLatido) continue;                    // la pantalla del video y los componentes no "laten"
+    let k = 1 + 0.025 * Math.sin(ahora / 1000 * 2.4 + (b.position.x + b.position.y) * 10);
+    if (presion && presion.boton === b) {
+      const p = (ahora - presion.t0) / 260;
+      if (p >= 1) presion = null;
+      else k *= 1 - 0.2 * Math.sin(Math.PI * p);
+    }
+    b.scale.setScalar(b.userData.escalaBase * k);
+  }
+}
+
+renderer.setAnimationLoop(() => {
+  const ahora = performance.now();
+  const dt = Math.min((ahora - tAnterior) / 1000, 0.1);
+  tAnterior = ahora;
+  if (!inicioEl.hidden && (++cuadro % 8)) return;   // detrás de la pantalla de inicio solo se dibuja 1 de cada 8 cuadros
+  if (modo === 'visor') {
+    camera.position.set(0, 0, distVisor * zoomVisor);
+  } else if (colocado) {
+    camera.quaternion.slerp(objetivo, 1 - Math.exp(-dt * SUAVIDAD_GIRO));
+    seguirCamara(dt, camera.quaternion);
+  }
+  animarEscena(ahora, dt);
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
